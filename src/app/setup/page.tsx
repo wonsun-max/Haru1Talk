@@ -25,17 +25,24 @@ export default function SetupPage() {
   const [notificationTime, setNotificationTime] = useState('22:00');
   const [isCreatingSession, setIsCreatingSession] = useState(false);
 
+  // Privacy Consent & Nickname states
+  const [nickname, setNickname] = useState('');
+  const [privacyConsented, setPrivacyConsented] = useState(false);
+  const [isProfileUpdating, setIsProfileUpdating] = useState(false);
+
   useEffect(() => {
     // Proactively verify the active Supabase authentication session
     async function loadUser() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
+          const defaultName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '하루톡 친구';
           setUserProfile({
             id: session.user.id,
-            name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || '하루톡 친구',
+            name: defaultName,
             avatar_url: session.user.user_metadata?.avatar_url,
           });
+          setNickname(defaultName);
           logger.info('Active Supabase user session loaded successfully.');
         } else {
           logger.warn('No active login session detected. Redirecting securely to landing page.');
@@ -57,13 +64,41 @@ export default function SetupPage() {
    */
   const handleStartChat = async () => {
     if (!userProfile) return;
-    setIsCreatingSession(true);
     
-    // Save chosen settings to profile preferences local cache
-    localStorage.setItem('haru_talk_persona', selectedPersona);
-    localStorage.setItem('haru_talk_notif_time', notificationTime);
+    const trimmedNickname = nickname.trim();
+    if (!trimmedNickname) {
+      alert('사용하실 닉네임을 입력해 주세요.');
+      return;
+    }
+
+    if (!privacyConsented) {
+      alert('하루톡 서비스를 이용하시려면 개인정보 수집 및 음성 데이터 이용약관에 동의하셔야 합니다.');
+      return;
+    }
+
+    setIsCreatingSession(true);
+    setIsProfileUpdating(true);
 
     try {
+      // 1. Sync custom nickname to Supabase Auth metadata securely
+      const { error: profileError } = await supabase.auth.updateUser({
+        data: {
+          full_name: trimmedNickname,
+          name: trimmedNickname,
+        }
+      });
+      
+      if (profileError) {
+        logger.warn('Failed to sync auth user nickname metadata, proceeding to session creation', profileError);
+      } else {
+        logger.info('Auth user nickname metadata successfully synced.');
+      }
+      setIsProfileUpdating(false);
+
+      // Save chosen settings to profile preferences local cache
+      localStorage.setItem('haru_talk_persona', selectedPersona);
+      localStorage.setItem('haru_talk_notif_time', notificationTime);
+
       // Real Supabase PostgreSQL session insert
       const { data: sessionData, error } = await supabase
         .from('chat_sessions')
@@ -82,6 +117,7 @@ export default function SetupPage() {
     } catch (err) {
       logger.error('Failed to create new chat session in Supabase PostgreSQL', err);
       setIsCreatingSession(false);
+      setIsProfileUpdating(false);
       alert('세션 생성 도중 에러가 발생했습니다. Supabase 테이블 생성 및 RLS 정책을 점검해 주세요.');
     }
   };
@@ -149,6 +185,23 @@ export default function SetupPage() {
             <span>오늘의 AI 친구 설정</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1.5">오늘 밤, 당신의 하루 이야기를 함께 나눌 대화 상대를 선택해 주세요.</p>
+        </div>
+
+        {/* NICKNAME EDIT FIELD */}
+        <div className="glass-panel rounded-2xl p-5 mb-8">
+          <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+            나의 닉네임 설정
+          </label>
+          <p className="text-[10px] text-slate-400 mb-3">AI 친구가 대화 중 당신을 친근하게 불러줄 이름입니다.</p>
+          <input
+            id="nickname-input"
+            type="text"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            placeholder="호칭을 입력해 주세요 (예: 원선, 쏭이)"
+            className="w-full h-11 rounded-xl px-4 text-xs glass-input font-medium"
+            maxLength={15}
+          />
         </div>
 
         {/* Persona Select Grid */}
@@ -234,7 +287,7 @@ export default function SetupPage() {
         </div>
 
         {/* Daily Alarm Notification card */}
-        <div className="glass-panel rounded-2xl p-5 mb-8 flex items-center justify-between">
+        <div className="glass-panel rounded-2xl p-5 mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
               <Bell className="w-5 h-5" />
@@ -255,14 +308,35 @@ export default function SetupPage() {
           </div>
         </div>
 
+        {/* Privacy Consent Checkbox Card */}
+        <div className="glass-panel rounded-2xl p-5 mb-8">
+          <div className="flex items-start gap-3">
+            <input
+              id="privacy-consent-checkbox"
+              type="checkbox"
+              checked={privacyConsented}
+              onChange={(e) => setPrivacyConsented(e.target.checked)}
+              className="w-4 h-4 mt-0.5 accent-purple-500 rounded border-slate-800 bg-slate-900 cursor-pointer"
+            />
+            <div className="flex-1 select-none">
+              <label htmlFor="privacy-consent-checkbox" className="text-xs font-bold text-white cursor-pointer">
+                개인정보 수집 및 음성 데이터 이용약관 동의 (필수)
+              </label>
+              <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                하루톡은 AI 대화 피드백 제공, 실시간 음성 통화(STT/TTS) 연동, 그리고 밤의 일기장 생성을 목적으로 텍스트 및 음성 데이터를 수집하며, 이 데이터는 OpenAI 등 제3자 AI 모델 학습에 사용되지 않고 안전하게 암호화 보증 처리됩니다.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Submit Action Button */}
         <button
           id="setup-start-btn"
           onClick={handleStartChat}
-          disabled={isCreatingSession}
+          disabled={isCreatingSession || isProfileUpdating}
           className="w-full h-13 rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-bold text-sm shadow-[0_4px_25px_rgba(167,139,250,0.25)] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
         >
-          {isCreatingSession ? '대화 세션 구성 중...' : '밤의 대화방으로 들어가기'}
+          {isCreatingSession ? (isProfileUpdating ? '프로필 동기화 중...' : '대화 세션 구성 중...') : '밤의 대화방으로 들어가기'}
           {!isCreatingSession && <ArrowRight className="w-4 h-4" />}
         </button>
       </section>
