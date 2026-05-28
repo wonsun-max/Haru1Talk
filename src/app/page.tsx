@@ -322,9 +322,11 @@ export default function LandingPage() {
       <header className="fixed top-0 left-0 w-full z-50 backdrop-blur-md bg-slate-950/40 border-b border-white/5 py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center shadow-[0_0_15px_rgba(147,51,234,0.4)]">
-              <Sparkles className="w-4.5 h-4.5 text-white" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="Haru Talk Logo"
+              className="w-8 h-8 rounded-lg object-cover shadow-[0_0_15px_rgba(167,139,250,0.3)] border border-purple-500/20"
+            />
             <span className="text-base font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-300">
               하루톡 <span className="text-purple-300 text-xs font-medium font-mono">HaruTalk</span>
             </span>
