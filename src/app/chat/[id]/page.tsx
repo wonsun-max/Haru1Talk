@@ -32,9 +32,81 @@ export default function ChatPage() {
   const [userTurnCount, setUserTurnCount] = useState(0);
   const [token, setToken] = useState<string>('');
 
+  // Live Call Mode states
+  const [isLiveCallMode, setIsLiveCallMode] = useState(false);
+  const [liveCallState, setLiveCallState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
+
+  // Synchronized refs for VAD audio closure callback tracking
+  const isLiveCallModeRef = useRef(false);
+  const liveCallStateRef = useRef<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
+  const isRecordingRef = useRef(false);
+  
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const lastSoundTimeRef = useRef<number>(0);
+  const vadAnimationIdRef = useRef<number | null>(null);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  // Synchronize states to refs
+  useEffect(() => {
+    isLiveCallModeRef.current = isLiveCallMode;
+  }, [isLiveCallMode]);
+
+  useEffect(() => {
+    liveCallStateRef.current = liveCallState;
+  }, [liveCallState]);
+
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  /**
+   * Destroys active audio streams, MediaRecorder locks, and silence triggers.
+   */
+  const cleanupAudioStream = () => {
+    if (activeAudioRef.current) {
+      try {
+        activeAudioRef.current.pause();
+      } catch (err) {
+        // ignore
+      }
+      activeAudioRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (err) {
+        // ignore
+      }
+    }
+    setIsRecording(false);
+    if (vadAnimationIdRef.current) {
+      cancelAnimationFrame(vadAnimationIdRef.current);
+      vadAnimationIdRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        if (audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close();
+        }
+      } catch (err) {
+        // ignore
+      }
+      audioContextRef.current = null;
+      analyserRef.current = null;
+    }
+  };
+
+  // Clean up all streams on unmount
+  useEffect(() => {
+    return () => {
+      cleanupAudioStream();
+    };
+  }, []);
 
   useEffect(() => {
     const savedPersona = localStorage.getItem('haru_talk_persona') as 'warm_f' | 'rational_t' | 'dog_c' || 'warm_f';
@@ -207,17 +279,33 @@ export default function ChatPage() {
   };
 
   /**
+   * Toggles between standard Text Chat and Live Voice Call modes.
+   */
+  const handleToggleLiveCallMode = () => {
+    if (isLiveCallMode) {
+      setIsLiveCallMode(false);
+      setLiveCallState('idle');
+      cleanupAudioStream();
+    } else {
+      setIsLiveCallMode(true);
+      setLiveCallState('idle');
+    }
+  };
+
+  /**
    * Initializes browser audio recording triggers.
    * 
-   * WHY: Captures microphone audio inputs in optimal browser capabilities (webm / mp4 fallback).
+   * WHY: Captures microphone audio inputs in optimal browser capabilities (webm / mp4 fallback)
+   * and mounts the live VAD (Voice Activity Detection) analyser loop when in Voice Call Mode.
    */
   const startAudioRecording = async () => {
     try {
+      cleanupAudioStream(); // Safety clear before initiating a new track
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
 
       // Premium Cross-Browser MediaRecorder Options Configuration
-      // Apple devices/Safari strictly mandate 'audio/mp4', while Chrome/Firefox support 'audio/webm'
       let mediaOptions = {};
       if (typeof MediaRecorder !== 'undefined') {
         if (MediaRecorder.isTypeSupported('audio/webm')) {
@@ -240,17 +328,78 @@ export default function ChatPage() {
         const fileExt = currentMime.includes('mp4') ? 'mp4' : 'webm';
         const audioBlob = new Blob(audioChunksRef.current, { type: currentMime });
         
-        await uploadAudioPayload(audioBlob, fileExt);
+        if (isLiveCallModeRef.current) {
+          setLiveCallState('thinking');
+          await uploadLiveVoicePayload(audioBlob, fileExt);
+        } else {
+          await uploadAudioPayload(audioBlob, fileExt);
+        }
+        
+        // Release hardware device tracks immediately
         stream.getTracks().forEach((track) => track.stop());
       };
 
       recorder.start();
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
+
+      if (isLiveCallModeRef.current) {
+        setLiveCallState('listening');
+        // Web Audio VAD Volume Threshold Analyzer Setup
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          const audioContext = new AudioContextClass();
+          const source = audioContext.createMediaStreamSource(stream);
+          const analyser = audioContext.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+
+          audioContextRef.current = audioContext;
+          analyserRef.current = analyser;
+
+          const bufferLength = analyser.frequencyBinCount;
+          const dataArray = new Uint8Array(bufferLength);
+          lastSoundTimeRef.current = Date.now();
+
+          const checkSilence = () => {
+            if (!analyserRef.current || !isRecordingRef.current) return;
+
+            analyserRef.current.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < bufferLength; i++) {
+              sum += dataArray[i];
+            }
+            const averageVolume = sum / bufferLength;
+
+            // Volume threshold 8 marks speaking voice
+            if (averageVolume > 8) {
+              lastSoundTimeRef.current = Date.now();
+            } else {
+              const silenceDuration = Date.now() - lastSoundTimeRef.current;
+              // 1.2s silence auto-triggers submission
+              if (silenceDuration > 1200) {
+                logger.info('VAD Silence detected. Transcribing voice call.');
+                stopAudioRecording();
+                return;
+              }
+            }
+
+            if (isRecordingRef.current) {
+              vadAnimationIdRef.current = requestAnimationFrame(checkSilence);
+            }
+          };
+
+          vadAnimationIdRef.current = requestAnimationFrame(checkSilence);
+        }
+      }
+
       logger.info('Browser audio recording session initialized.');
     } catch (err) {
       logger.error('Failed to trigger audio hardware', err);
       alert('마이크가 꺼져있거나 오디오 디바이스를 지원하지 않는 브라우저입니다.');
+      if (isLiveCallModeRef.current) {
+        setLiveCallState('idle');
+      }
     }
   };
 
@@ -260,7 +409,7 @@ export default function ChatPage() {
    * WHY: Triggers the stop callback of the MediaRecorder to process the completed blob stream.
    */
   const stopAudioRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && isRecordingRef.current) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
@@ -299,6 +448,158 @@ export default function ChatPage() {
       logger.error('Failed to process Whisper upload stream', err);
       alert('오디오 음성 텍스트 변환 서버 연동에 실패했습니다.');
       setIsAiTyping(false);
+    }
+  };
+
+  /**
+   * Voice Call specific Whisper STT dispatcher.
+   */
+  const uploadLiveVoicePayload = async (blob: Blob, extension = 'webm') => {
+    try {
+      const audioFormData = new FormData();
+      audioFormData.append('file', blob, `recording.${extension}`);
+
+      const response = await fetch('/api/stt', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: audioFormData,
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed STT Whisper transcript');
+
+      if (data.text && data.text.trim()) {
+        logger.info(`Whisper Voice Call STT transcription successful: "${data.text}"`);
+        await handleSendLiveMessage(data.text);
+      } else {
+        logger.info('No transcription content captured, returning to listening state.');
+        setLiveCallState('listening');
+        startAudioRecording();
+      }
+    } catch (err) {
+      logger.error('Failed to process Whisper voice call upload stream', err);
+      setLiveCallState('listening');
+      startAudioRecording();
+    }
+  };
+
+  /**
+   * Voice Call specific AI conversation dispatcher.
+   */
+  const handleSendLiveMessage = async (text: string) => {
+    const userMsgId = `user-msg-${Date.now()}`;
+    const newUserMsg: Message = {
+      id: userMsgId,
+      sender: 'user',
+      content: text,
+      created_at: new Date().toISOString(),
+    };
+
+    setMessages(prev => [...prev, newUserMsg]);
+    setLiveCallState('thinking');
+    setIsAiTyping(true);
+    const nextTurnCount = userTurnCount + 1;
+    setUserTurnCount(nextTurnCount);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          sessionId,
+          message: text,
+          persona,
+          isLiveCall: true, // Optimizes the prompt to strictly yield short replies
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to fetch AI reply');
+
+      let replyText = data.reply;
+
+      if (nextTurnCount === 5) {
+        replyText = replyText + '\n\n오늘 정말 많은 이야기를 나눴어. 이쯤에서 나눈 이야기를 정리해 예쁜 밤의 일기장을 만들어 줄까? 언제든 상단의 "일기 작성하기" 단추를 누르면 돼!';
+      }
+
+      const newAiMsgId = `ai-msg-${Date.now()}`;
+      setMessages(prev => [...prev, {
+        id: newAiMsgId,
+        sender: 'ai',
+        content: replyText,
+        created_at: new Date().toISOString(),
+      }]);
+      setIsAiTyping(false);
+
+      await triggerLiveTextToSpeech(newAiMsgId, replyText);
+
+    } catch (err) {
+      logger.error('Failed to dispatch live call chat sequence to server APIs', err);
+      setLiveCallState('listening');
+      setIsAiTyping(false);
+      startAudioRecording();
+    }
+  };
+
+  /**
+   * Voice Call specific TTS synthesis and playback loop manager.
+   */
+  const triggerLiveTextToSpeech = async (msgId: string, text: string) => {
+    try {
+      let voiceCode = 'alloy';
+      if (persona === 'rational_t') voiceCode = 'onyx';
+      if (persona === 'dog_c') voiceCode = 'nova';
+
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          text,
+          voice: voiceCode,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to download TTS stream');
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      
+      activeAudioRef.current = audio;
+      setLiveCallState('speaking');
+
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        activeAudioRef.current = null;
+        
+        // Auto-restart loop if still in Live Call Mode
+        if (isLiveCallModeRef.current) {
+          logger.info('Live TTS playback completed. Automatically re-arming microphone.');
+          setLiveCallState('listening');
+          startAudioRecording();
+        } else {
+          setLiveCallState('idle');
+        }
+      };
+
+      await audio.play();
+
+    } catch (err) {
+      logger.error('Live call TTS execution crashed', err);
+      if (isLiveCallModeRef.current) {
+        setLiveCallState('listening');
+        startAudioRecording();
+      } else {
+        setLiveCallState('idle');
+      }
     }
   };
 
@@ -393,169 +694,365 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Generate Diary Trigger FAB */}
-        <button
-          id="diary-create-btn"
-          onClick={handleCompileDiary}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white text-[11px] font-bold shadow-[0_4px_15px_rgba(167,139,250,0.25)] transition-all active:scale-[0.98] cursor-pointer"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>일기 작성하기 ({userTurnCount}/5)</span>
-        </button>
-      </header>
-
-      {/* MESSAGES LOG VIEW */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-5 select-text">
-        <AnimatePresence initial={false}>
-          {messages.map((msg, index) => {
-            const isAi = msg.sender === 'ai';
-            return (
-              <motion.div
-                key={msg.id || index}
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4 }}
-                className={`flex gap-3 items-end ${isAi ? 'justify-start' : 'justify-end'}`}
-              >
-                {/* AI Avatar */}
-                {isAi && (
-                  <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center font-bold text-xs ${
-                    persona === 'warm_f' ? 'bg-purple-950/40 text-purple-300 border border-purple-800/30' :
-                    persona === 'rational_t' ? 'bg-blue-950/40 text-blue-300 border border-blue-800/30' :
-                    'bg-rose-950/40 text-rose-300 border border-rose-800/30'
-                  }`}>
-                    {persona === 'warm_f' ? 'F' : persona === 'rational_t' ? 'T' : '🐾'}
-                  </div>
-                )}
-
-                {/* Message Bubble wrapper */}
-                <div className={`flex flex-col max-w-[70%] gap-1.5 ${isAi ? 'items-start' : 'items-end'}`}>
-                  
-                  {/* Bubble body card */}
-                  <div className={`rounded-2xl p-4 text-xs font-medium leading-relaxed ${
-                    isAi
-                      ? 'bg-slate-900/60 border border-slate-800/80 text-white rounded-tl-sm'
-                      : 'bg-purple-600/90 text-white rounded-tr-sm shadow-[0_4px_15px_rgba(147,51,234,0.15)]'
-                  }`}>
-                    {msg.content.split('\n').map((line, lIdx) => (
-                      <p key={lIdx} className={lIdx > 0 ? 'mt-1.5' : ''}>{line}</p>
-                    ))}
-                  </div>
-
-                  {/* Bubble Sub-action: Play Voice (TTS) only for AI messages */}
-                  {isAi && (
-                    <button
-                      id={`tts-play-${msg.id}`}
-                      onClick={() => triggerTextToSpeech(msg.id, msg.content)}
-                      className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border transition-all cursor-pointer ${
-                        isTtsPlaying === msg.id
-                          ? 'text-purple-300 border-purple-500/30 bg-purple-500/10'
-                          : 'text-slate-400 border-slate-800 hover:text-white'
-                      }`}
-                    >
-                      <Volume2 className={`w-3 h-3 ${isTtsPlaying === msg.id ? 'animate-pulse' : ''}`} />
-                      <span>{isTtsPlaying === msg.id ? '말하는 중...' : '음성 듣기'}</span>
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-
-        {/* AI Typing Indicator */}
-        {isAiTyping && (
-          <div className="flex gap-3 items-center justify-start">
-            <div className="w-8 h-8 rounded-xl bg-slate-900/50 border border-slate-800/30 flex items-center justify-center font-bold text-xs text-slate-400">
-              ••
-            </div>
-            <div className="rounded-2xl p-3 bg-slate-900/40 border border-slate-900 text-slate-300 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" />
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.2s' }} />
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.4s' }} />
-            </div>
-          </div>
-        )}
-
-        <div ref={chatEndRef} />
-      </div>
-
-      {/* DYNAMIC FOOTER CONTROLLER */}
-      <footer className="glass-panel w-full p-4 z-10 flex flex-col gap-3 pb-8">
-        
-        {/* VOICE RECORDING OVERLAY RIPPLE INDICATOR */}
-        <AnimatePresence>
-          {isRecording && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="flex flex-col items-center justify-center bg-purple-950/20 border border-purple-500/15 rounded-2xl py-4"
-            >
-              <p className="text-[10px] text-purple-300 font-bold tracking-wider mb-3 uppercase animate-pulse">
-                실시간 오디오 마이크 인식 중...
-              </p>
-              
-              {/* Wave ripples */}
-              <div className="flex items-end gap-1 h-8 mb-4">
-                <div className="w-1 h-3 bg-purple-400 rounded-full voice-wave-bar" style={{ animationDelay: '0.1s' }} />
-                <div className="w-1 h-7 bg-purple-300 rounded-full voice-wave-bar" style={{ animationDelay: '0.3s' }} />
-                <div className="w-1 h-5 bg-blue-300 rounded-full voice-wave-bar" style={{ animationDelay: '0.5s' }} />
-                <div className="w-1 h-8 bg-purple-400 rounded-full voice-wave-bar" style={{ animationDelay: '0.2s' }} />
-                <div className="w-1 h-4 bg-indigo-300 rounded-full voice-wave-bar" style={{ animationDelay: '0.4s' }} />
-              </div>
-
-              <button
-                id="voice-stop-btn"
-                onClick={stopAudioRecording}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_4px_15px_rgba(220,38,38,0.25)] active:scale-[0.98] cursor-pointer"
-              >
-                <span>녹음 완료 및 전송</span>
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* INPUT FORM TOOLBAR */}
-        <div className="flex items-center gap-3">
-          
-          {/* Audio recording trigger */}
-          {!isRecording && (
-            <button
-              id="voice-start-btn"
-              onClick={startAudioRecording}
-              disabled={isAiTyping}
-              className="w-11 h-11 rounded-xl bg-slate-900/80 hover:bg-purple-950/20 hover:text-purple-300 border border-slate-800 text-slate-400 flex items-center justify-center transition-all shrink-0 active:scale-[0.95] disabled:opacity-50 cursor-pointer"
-            >
-              <Mic className="w-5 h-5" />
-            </button>
-          )}
-
-          {/* Text Input */}
-          <input
-            id="chat-input"
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSendMessage();
-            }}
-            placeholder={isAiTyping ? 'AI가 답변을 생각하는 중입니다...' : '친구와 대화하듯 편하게 적어주세요...'}
-            disabled={isAiTyping || isRecording}
-            className="flex-1 h-11 rounded-xl px-4 text-xs glass-input font-medium disabled:opacity-50"
-          />
-
-          {/* Send text button */}
+        <div className="flex items-center gap-2">
+          {/* Live Voice Call Toggle FAB */}
           <button
-            id="chat-send-btn"
-            onClick={() => handleSendMessage()}
-            disabled={isAiTyping || isRecording || !inputText.trim()}
-            className="w-11 h-11 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-slate-900/60 text-white flex items-center justify-center transition-all shrink-0 active:scale-[0.95] shadow-[0_4px_15px_rgba(147,51,234,0.2)] disabled:shadow-none disabled:opacity-50 cursor-pointer"
+            id="live-call-toggle-btn"
+            onClick={handleToggleLiveCallMode}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all active:scale-[0.98] cursor-pointer shadow-[0_2px_10px_rgba(167,139,250,0.1)] border ${
+              isLiveCallMode
+                ? 'bg-red-950/40 text-red-300 border-red-500/20 hover:bg-red-900/50 shadow-[0_2px_10px_rgba(239,68,68,0.15)]'
+                : 'bg-purple-950/40 text-purple-300 border-purple-500/20 hover:bg-purple-900/50'
+            }`}
           >
-            <Send className="w-4 h-4 fill-current" />
+            <Mic className={`w-3.5 h-3.5 ${isLiveCallMode ? 'animate-pulse text-red-400' : 'text-purple-400'}`} />
+            <span>{isLiveCallMode ? '채팅 모드로 전환' : '실시간 음성 통화'}</span>
+          </button>
+
+          {/* Generate Diary Trigger FAB */}
+          <button
+            id="diary-create-btn"
+            onClick={handleCompileDiary}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white text-[11px] font-bold shadow-[0_4px_15px_rgba(167,139,250,0.25)] transition-all active:scale-[0.98] cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>일기 작성하기 ({userTurnCount}/5)</span>
           </button>
         </div>
-      </footer>
+      </header>
+
+      {/* CLASSIC CHAT MESSAGES LOG VIEW */}
+      {!isLiveCallMode && (
+        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-5 select-text">
+          <AnimatePresence initial={false}>
+            {messages.map((msg, index) => {
+              const isAi = msg.sender === 'ai';
+              return (
+                <motion.div
+                  key={msg.id || index}
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className={`flex gap-3 items-end ${isAi ? 'justify-start' : 'justify-end'}`}
+                >
+                  {/* AI Avatar */}
+                  {isAi && (
+                    <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center font-bold text-xs ${
+                      persona === 'warm_f' ? 'bg-purple-950/40 text-purple-300 border border-purple-800/30' :
+                      persona === 'rational_t' ? 'bg-blue-950/40 text-blue-300 border border-blue-800/30' :
+                      'bg-rose-950/40 text-rose-300 border border-rose-800/30'
+                    }`}>
+                      {persona === 'warm_f' ? 'F' : persona === 'rational_t' ? 'T' : '🐾'}
+                    </div>
+                  )}
+
+                  {/* Message Bubble wrapper */}
+                  <div className={`flex flex-col max-w-[70%] gap-1.5 ${isAi ? 'items-start' : 'items-end'}`}>
+                    
+                    {/* Bubble body card */}
+                    <div className={`rounded-2xl p-4 text-xs font-medium leading-relaxed ${
+                      isAi
+                        ? 'bg-slate-900/60 border border-slate-800/80 text-white rounded-tl-sm'
+                        : 'bg-purple-600/90 text-white rounded-tr-sm shadow-[0_4px_15px_rgba(147,51,234,0.15)]'
+                    }`}>
+                      {msg.content.split('\n').map((line, lIdx) => (
+                        <p key={lIdx} className={lIdx > 0 ? 'mt-1.5' : ''}>{line}</p>
+                      ))}
+                    </div>
+
+                    {/* Bubble Sub-action: Play Voice (TTS) only for AI messages */}
+                    {isAi && (
+                      <button
+                        id={`tts-play-${msg.id}`}
+                        onClick={() => triggerTextToSpeech(msg.id, msg.content)}
+                        className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border transition-all cursor-pointer ${
+                          isTtsPlaying === msg.id
+                            ? 'text-purple-300 border-purple-500/30 bg-purple-500/10'
+                            : 'text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <Volume2 className={`w-3 h-3 ${isTtsPlaying === msg.id ? 'animate-pulse' : ''}`} />
+                        <span>{isTtsPlaying === msg.id ? '말하는 중...' : '음성 듣기'}</span>
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+
+          {/* AI Typing Indicator */}
+          {isAiTyping && (
+            <div className="flex gap-3 items-center justify-start">
+              <div className="w-8 h-8 rounded-xl bg-slate-900/50 border border-slate-800/30 flex items-center justify-center font-bold text-xs text-slate-400">
+                ••
+              </div>
+              <div className="rounded-2xl p-3 bg-slate-900/40 border border-slate-900 text-slate-300 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" />
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.2s' }} />
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.4s' }} />
+              </div>
+            </div>
+          )}
+
+          <div ref={chatEndRef} />
+        </div>
+      )}
+
+      {/* CLASSIC CHAT FOOTER CONTROLLER */}
+      {!isLiveCallMode && (
+        <footer className="glass-panel w-full p-4 z-10 flex flex-col gap-3 pb-8">
+          
+          {/* VOICE RECORDING OVERLAY RIPPLE INDICATOR */}
+          <AnimatePresence>
+            {isRecording && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="flex flex-col items-center justify-center bg-purple-950/20 border border-purple-500/15 rounded-2xl py-4"
+              >
+                <p className="text-[10px] text-purple-300 font-bold tracking-wider mb-3 uppercase animate-pulse">
+                  실시간 오디오 마이크 인식 중...
+                </p>
+                
+                {/* Wave ripples */}
+                <div className="flex items-end gap-1 h-8 mb-4">
+                  <div className="w-1 h-3 bg-purple-400 rounded-full voice-wave-bar" style={{ animationDelay: '0.1s' }} />
+                  <div className="w-1 h-7 bg-purple-300 rounded-full voice-wave-bar" style={{ animationDelay: '0.3s' }} />
+                  <div className="w-1 h-5 bg-blue-300 rounded-full voice-wave-bar" style={{ animationDelay: '0.5s' }} />
+                  <div className="w-1 h-8 bg-purple-400 rounded-full voice-wave-bar" style={{ animationDelay: '0.2s' }} />
+                  <div className="w-1 h-4 bg-indigo-300 rounded-full voice-wave-bar" style={{ animationDelay: '0.4s' }} />
+                </div>
+
+                <button
+                  id="voice-stop-btn"
+                  onClick={stopAudioRecording}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_4px_15px_rgba(220,38,38,0.25)] active:scale-[0.98] cursor-pointer"
+                >
+                  <span>녹음 완료 및 전송</span>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* INPUT FORM TOOLBAR */}
+          <div className="flex items-center gap-3">
+            
+            {/* Audio recording trigger */}
+            {!isRecording && (
+              <button
+                id="voice-start-btn"
+                onClick={startAudioRecording}
+                disabled={isAiTyping}
+                className="w-11 h-11 rounded-xl bg-slate-900/80 hover:bg-purple-950/20 hover:text-purple-300 border border-slate-800 text-slate-400 flex items-center justify-center transition-all shrink-0 active:scale-[0.95] disabled:opacity-50 cursor-pointer"
+              >
+                <Mic className="w-5 h-5" />
+              </button>
+            )}
+
+            {/* Text Input */}
+            <input
+              id="chat-input"
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSendMessage();
+              }}
+              placeholder={isAiTyping ? 'AI가 답변을 생각하는 중입니다...' : '친구와 대화하듯 편하게 적어주세요...'}
+              disabled={isAiTyping || isRecording}
+              className="flex-1 h-11 rounded-xl px-4 text-xs glass-input font-medium disabled:opacity-50"
+            />
+
+            {/* Send text button */}
+            <button
+              id="chat-send-btn"
+              onClick={() => handleSendMessage()}
+              disabled={isAiTyping || isRecording || !inputText.trim()}
+              className="w-11 h-11 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-slate-900/60 text-white flex items-center justify-center transition-all shrink-0 active:scale-[0.95] shadow-[0_4px_15px_rgba(147,51,234,0.2)] disabled:shadow-none disabled:opacity-50 cursor-pointer"
+            >
+              <Send className="w-4 h-4 fill-current" />
+            </button>
+          </div>
+        </footer>
+      )}
+
+      {/* LIVE VOICE CALL INTERFACE OVERLAY */}
+      {isLiveCallMode && (
+        <div className="absolute inset-x-0 bottom-0 top-[60px] z-30 flex flex-col bg-gradient-to-b from-[#02020a] to-[#04041b] overflow-hidden select-none">
+          {/* Subtle background space radial gradients */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(167,139,250,0.02)_0%,transparent_70%)] pointer-events-none" />
+
+          {/* Interactive Visualizer Sphere section */}
+          <div className="flex-1 flex flex-col items-center justify-center relative p-6">
+            
+            {/* Ambient Background Glow matching the active state */}
+            <div className={`absolute w-[280px] h-[280px] rounded-full blur-[110px] transition-all duration-1000 opacity-25 pointer-events-none ${
+              liveCallState === 'listening' ? 'bg-emerald-500/20' :
+              liveCallState === 'thinking' ? 'bg-purple-500/20' :
+              liveCallState === 'speaking' ? 'bg-blue-500/20' :
+              'bg-purple-900/10'
+            }`} />
+
+            {/* Glowing Pulsating Orb Container */}
+            <motion.div
+              onClick={() => {
+                if (liveCallState === 'idle') {
+                  setLiveCallState('listening');
+                  startAudioRecording();
+                } else if (liveCallState === 'listening') {
+                  setLiveCallState('thinking');
+                  stopAudioRecording();
+                } else if (liveCallState === 'speaking') {
+                  cleanupAudioStream();
+                  setLiveCallState('listening');
+                  startAudioRecording();
+                }
+              }}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.98 }}
+              className="relative w-44 h-44 rounded-full flex items-center justify-center cursor-pointer z-10"
+            >
+              {/* Outer pulsating wave rings */}
+              <AnimatePresence>
+                {liveCallState === 'listening' && (
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0.5 }}
+                    animate={{ scale: 1.4, opacity: 0 }}
+                    exit={{ scale: 0.8, opacity: 0 }}
+                    transition={{ repeat: Infinity, duration: 2, ease: 'easeOut' }}
+                    className="absolute inset-0 rounded-full border-2 border-emerald-500/30"
+                  />
+                )}
+                {liveCallState === 'speaking' && (
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0.6 }}
+                    animate={{ scale: 1.6, opacity: 0 }}
+                    exit={{ scale: 0.8, opacity: 0 }}
+                    transition={{ repeat: Infinity, duration: 1.6, ease: 'easeOut' }}
+                    className="absolute inset-0 rounded-full border-2 border-blue-500/30"
+                  />
+                )}
+                {liveCallState === 'thinking' && (
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 3, ease: 'linear' }}
+                    className="absolute -inset-2 rounded-full border border-dashed border-purple-500/20"
+                  />
+                )}
+              </AnimatePresence>
+
+              {/* Main Sphere Body */}
+              <div className={`w-36 h-36 rounded-full flex flex-col items-center justify-center relative overflow-hidden transition-all duration-700 shadow-2xl ${
+                liveCallState === 'listening' ? 'bg-gradient-to-tr from-emerald-950/40 to-teal-800/20 border border-emerald-500/40 shadow-emerald-950/30 animate-pulse' :
+                liveCallState === 'thinking' ? 'bg-gradient-to-tr from-purple-950/40 to-indigo-800/20 border border-purple-500/40 shadow-purple-950/30' :
+                liveCallState === 'speaking' ? 'bg-gradient-to-tr from-blue-950/40 to-indigo-800/20 border border-blue-500/40 shadow-blue-950/30' :
+                'bg-gradient-to-tr from-slate-900/60 to-purple-950/20 border border-slate-800/80 shadow-black'
+              }`}>
+                {/* Character avatar indicator */}
+                <span className="text-4xl select-none mb-1 animate-bounce" style={{ animationDuration: '3.5s' }}>
+                  {persona === 'warm_f' ? '🌸' : persona === 'rational_t' ? '⚡' : '🐶'}
+                </span>
+                
+                <span className="text-[10px] font-bold text-slate-300 tracking-widest mt-1">
+                  {persona === 'warm_f' ? 'HARU F' : persona === 'rational_t' ? 'HARU T' : 'DOGGY'}
+                </span>
+              </div>
+            </motion.div>
+
+            {/* Speaking equalizer bars */}
+            {liveCallState === 'speaking' && (
+              <div className="flex gap-1.5 h-6 mt-8 items-end z-10">
+                <div className="w-1 h-2 bg-blue-400 rounded-full voice-wave-bar" style={{ animationDelay: '0.1s' }} />
+                <div className="w-1 h-5 bg-blue-300 rounded-full voice-wave-bar" style={{ animationDelay: '0.3s' }} />
+                <div className="w-1 h-3 bg-indigo-300 rounded-full voice-wave-bar" style={{ animationDelay: '0.5s' }} />
+                <div className="w-1 h-6 bg-blue-400 rounded-full voice-wave-bar" style={{ animationDelay: '0.2s' }} />
+                <div className="w-1 h-4 bg-purple-300 rounded-full voice-wave-bar" style={{ animationDelay: '0.4s' }} />
+              </div>
+            )}
+
+            {/* Listening dots */}
+            {liveCallState === 'listening' && (
+              <div className="flex gap-1.5 h-4 mt-8 items-center z-10">
+                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                <span className="w-2 h-2 bg-emerald-300 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }} />
+                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0.5s' }} />
+              </div>
+            )}
+
+            {/* Descriptive Status cues */}
+            <div className="text-center mt-8 z-10 max-w-xs px-2">
+              <h2 className="text-sm font-bold text-white tracking-tight">
+                {liveCallState === 'listening' ? '경청하는 중...' :
+                 liveCallState === 'thinking' ? '이야기를 듣고 생각하는 중...' :
+                 liveCallState === 'speaking' ? '친구가 말하는 중...' :
+                 '통화 준비 완료'}
+              </h2>
+              
+              <p className="text-[11px] text-slate-400 mt-2 leading-relaxed font-medium">
+                {liveCallState === 'listening' ? '오늘 있었던 소소한 일이나 감정을 편하게 말씀해 주세요. 말하기를 마치면 침묵하거나 아래 단추를 누르세요.' :
+                 liveCallState === 'thinking' ? '음성 메세지를 전송받아 답변을 구성하고 있습니다...' :
+                 liveCallState === 'speaking' ? '친구의 목소리에 귀를 기울여 보세요. 화면 구체를 탭하면 이야기를 중단하고 즉시 말을 시작합니다.' :
+                 '아래 "통화 시작" 단추를 누르거나 구체를 탭하여 대화를 시작해 보세요.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Active call controller bottom deck */}
+          <footer className="w-full px-6 pb-12 flex flex-col gap-4 items-center z-10">
+            
+            {/* Primary Action Buttons */}
+            <div className="flex gap-4 w-full max-w-sm justify-center items-center">
+              
+              {/* Start/Finish speak toggle */}
+              {liveCallState === 'idle' ? (
+                <button
+                  id="live-start-call-btn"
+                  onClick={() => {
+                    setLiveCallState('listening');
+                    startAudioRecording();
+                  }}
+                  className="flex-1 h-12 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-bold text-xs shadow-[0_4px_15px_rgba(167,139,250,0.25)] flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <Mic className="w-4 h-4" />
+                  <span>통화 시작</span>
+                </button>
+              ) : liveCallState === 'listening' ? (
+                <button
+                  id="live-submit-speak-btn"
+                  onClick={() => {
+                    setLiveCallState('thinking');
+                    stopAudioRecording();
+                  }}
+                  className="flex-1 h-12 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-[0_4px_15px_rgba(16,185,129,0.25)] flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>말하기 완료 (즉시 전송)</span>
+                </button>
+              ) : (
+                <div className="flex-1 h-12 flex items-center justify-center bg-slate-900/60 border border-slate-800 text-slate-500 font-bold text-xs rounded-full">
+                  <span>{liveCallState === 'thinking' ? '통신 분석 대기 중' : '친구의 답변 청취 중'}</span>
+                </div>
+              )}
+
+              {/* Hang up controller */}
+              <button
+                id="live-hangup-btn"
+                onClick={handleToggleLiveCallMode}
+                className="px-6 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all shadow-[0_4px_15px_rgba(220,38,38,0.25)] cursor-pointer"
+              >
+                <Square className="w-4 h-4 fill-current" />
+                <span>종료</span>
+              </button>
+            </div>
+            
+            <p className="text-[10px] text-slate-500 font-semibold tracking-wider uppercase">
+              실시간 암호화 인장 통화 보안 채널
+            </p>
+          </footer>
+        </div>
+      )}
     </main>
   );
 }

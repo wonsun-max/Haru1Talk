@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Parse Request Body
     const body = await request.json();
-    const { sessionId, message, persona } = body;
+    const { sessionId, message, persona, isLiveCall } = body;
 
     if (!sessionId || !message) {
       return NextResponse.json({ error: 'Bad Request: sessionId and message are required.' }, { status: 400 });
@@ -111,6 +111,13 @@ export async function POST(request: NextRequest) {
           '적극적으로 고개를 끄덕이고 따뜻한 위로와 응원의 한마디를 건네줘. ' +
           '절대로 유저가 말하지 않은 사실을 지어내거나 멋대로 추측하지 마.';
         break;
+    }
+
+    // Strict speed optimizations if in live call mode
+    if (isLiveCall) {
+      systemPrompt += 
+        ' [중요: 현재 실시간 음성 통화 중이므로 대답은 반드시 1문장 혹은 최대 2문장 이내로 아주 짤막하고 신속하게 건네줘. ' +
+        '줄바꿈(Enter) 없이 한 줄로만 대답해줘. 감정을 표현하는 행동 지시문(예: [꼬리 흔들기])이나 특수문자 사용은 가급적 최소화해줘.]';
     }
 
     // 7. Map history to OpenAI message structure
