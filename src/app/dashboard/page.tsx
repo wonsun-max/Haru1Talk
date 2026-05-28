@@ -54,6 +54,19 @@ export default function DashboardPage() {
             setNotificationEnabled(session.user.user_metadata.notification_enabled);
           }
 
+          // Auto-sync Kakao access token in metadata to keep it fresh for cron jobs
+          const provider = session.user.app_metadata?.provider || 'email';
+          const providerToken = session.provider_token;
+          if (provider === 'kakao' && providerToken && session.user.user_metadata?.kakao_access_token !== providerToken) {
+            logger.info('Dashboard: Auto-syncing fresh Kakao access token to user metadata.');
+            await supabase.auth.updateUser({
+              data: {
+                oauth_provider: 'kakao',
+                kakao_access_token: providerToken,
+              }
+            });
+          }
+
           logger.info('Dashboard: Auth session verified successfully.');
         } else {
           logger.warn('Dashboard: Unauthenticated access attempt. Redirecting to landing page.');

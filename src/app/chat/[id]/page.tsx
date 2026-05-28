@@ -37,6 +37,10 @@ export default function ChatPage() {
   const [isLiveCallMode, setIsLiveCallMode] = useState(false);
   const [liveCallState, setLiveCallState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
 
+  // Microphone error guide modal state
+  const [isMicModalOpen, setIsMicModalOpen] = useState(false);
+  const [micBrowserType, setMicBrowserType] = useState<'safari' | 'chrome' | 'kakao' | 'other'>('other');
+
   // Synchronized refs for VAD audio closure callback tracking
   const isLiveCallModeRef = useRef(false);
   const liveCallStateRef = useRef<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
@@ -320,12 +324,14 @@ export default function ChatPage() {
       audioChunksRef.current = [];
 
       // Premium Cross-Browser MediaRecorder Options Configuration
-      let mediaOptions = {};
+      let mediaOptions: { audioBitsPerSecond: number; mimeType?: string } = {
+        audioBitsPerSecond: 64000, // 64kbps is extremely clear for voice but 10x smaller in network footprint
+      };
       if (typeof MediaRecorder !== 'undefined') {
         if (MediaRecorder.isTypeSupported('audio/webm')) {
-          mediaOptions = { mimeType: 'audio/webm' };
+          mediaOptions.mimeType = 'audio/webm';
         } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-          mediaOptions = { mimeType: 'audio/mp4' };
+          mediaOptions.mimeType = 'audio/mp4';
         }
       }
 
@@ -410,7 +416,19 @@ export default function ChatPage() {
       logger.info('Browser audio recording session initialized.');
     } catch (err) {
       logger.error('Failed to trigger audio hardware', err);
-      alert('마이크가 꺼져있거나 오디오 디바이스를 지원하지 않는 브라우저입니다.');
+      // Detect user agent for customized browser mic guides
+      const ua = typeof window !== 'undefined' ? window.navigator.userAgent.toLowerCase() : '';
+      if (ua.includes('kakaotalk')) {
+        setMicBrowserType('kakao');
+      } else if (ua.includes('chrome') || ua.includes('crios')) {
+        setMicBrowserType('chrome');
+      } else if (ua.includes('safari') && !ua.includes('chrome')) {
+        setMicBrowserType('safari');
+      } else {
+        setMicBrowserType('other');
+      }
+      setIsMicModalOpen(true);
+
       if (isLiveCallModeRef.current) {
         setLiveCallState('idle');
       }
@@ -1077,6 +1095,86 @@ export default function ChatPage() {
           </footer>
         </div>
       )}
+
+      {/* Premium Glassmorphic Microphone Permission Modal */}
+      <AnimatePresence>
+        {isMicModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="glass-panel p-6 rounded-2xl max-w-sm w-full border border-red-500/20 shadow-2xl relative overflow-hidden flex flex-col"
+            >
+              {/* Glow light background decoration */}
+              <div className="absolute -top-12 -left-12 w-24 h-24 rounded-full bg-red-500/10 blur-xl pointer-events-none" />
+              
+              <div className="flex flex-col items-center text-center">
+                <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mb-4">
+                  <Mic className="w-6 h-6 text-red-400" />
+                </div>
+                
+                <h3 className="text-base font-extrabold text-white tracking-tight">
+                  마이크 접근 권한이 필요해요
+                </h3>
+                
+                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                  하루톡의 AI 친구와 음성으로 따뜻하게 교감하려면 마이크 사용 허가가 필수적입니다.
+                </p>
+
+                {/* Localized Browser-Specific Help Guides */}
+                <div className="w-full mt-5 p-4 rounded-xl bg-slate-950/40 border border-slate-900 text-left text-xs leading-relaxed">
+                  <p className="text-[11px] font-bold text-indigo-300 mb-2 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>사용 중인 브라우저 해결 방법</span>
+                  </p>
+                  
+                  {micBrowserType === 'kakao' ? (
+                    <ol className="list-decimal pl-4 space-y-1.5 text-slate-300 text-[11px]">
+                      <li>카카오톡 대화창 오른쪽 아래 <strong>'더보기(···)'</strong> 탭을 클릭합니다.</li>
+                      <li>오른쪽 상단 <strong>설정 아이콘</strong>을 누릅니다.</li>
+                      <li><strong>'개인정보 보호 {"-> "} 권한 설정'</strong>에서 마이크 액세스를 <strong>허용</strong>으로 켭니다.</li>
+                      <li>페이지를 새로고침한 뒤 다시 시도해 주세요.</li>
+                    </ol>
+                  ) : micBrowserType === 'safari' ? (
+                    <ol className="list-decimal pl-4 space-y-1.5 text-slate-300 text-[11px]">
+                      <li>주소창 왼쪽의 <strong>'한한(또는 aA)'</strong> 아이콘을 탭합니다.</li>
+                      <li><strong>'웹사이트 설정'</strong>을 선택합니다.</li>
+                      <li>마이크 설정을 <strong>'허용'</strong>으로 변경해 주세요.</li>
+                      <li>새로고침 후 다시 통화를 시도합니다.</li>
+                    </ol>
+                  ) : micBrowserType === 'chrome' ? (
+                    <ol className="list-decimal pl-4 space-y-1.5 text-slate-300 text-[11px]">
+                      <li>주소창 왼쪽의 <strong>'설정/슬라이더 아이콘'</strong>을 탭합니다.</li>
+                      <li><strong>'사이트 설정 {"-> "} 마이크 권한'</strong>으로 들어갑니다.</li>
+                      <li>차단됨을 <strong>'허용'</strong> 상태로 변경합니다.</li>
+                      <li>새로고침한 뒤 다시 시작해 보세요.</li>
+                    </ol>
+                  ) : (
+                    <ul className="list-disc pl-4 space-y-1 text-slate-300 text-[11px]">
+                      <li>주소창 근처의 <strong>자물쇠/설정 아이콘</strong>을 눌러보세요.</li>
+                      <li>마이크 권한이 <strong>차단</strong>되어 있다면 <strong>허용</strong>으로 활성화해 주세요.</li>
+                      <li>스마트폰 기기 설정에서 브라우저 앱의 마이크 권한이 켜져 있는지도 함께 확인해 주세요.</li>
+                    </ul>
+                  )}
+                </div>
+              </div>
+              
+              <button
+                onClick={() => setIsMicModalOpen(false)}
+                className="w-full mt-6 h-11 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-bold text-xs shadow-md transition-all active:scale-[0.98] cursor-pointer"
+              >
+                확인했습니다
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
