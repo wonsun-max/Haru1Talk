@@ -60,20 +60,9 @@ export default function RootLayout({
         <Script
           src="https://developers.kakao.com/sdk/js/kakao.min.js"
           strategy="afterInteractive"
-          onLoad={() => {
-            if (typeof window !== 'undefined' && window.Kakao && !window.Kakao.isInitialized()) {
-              window.Kakao.init('66d47e37d3bc8228d965a409b6f944ea');
-              logger.info('Kakao JavaScript SDK initialized successfully.');
-            }
-          }}
         />
         {children}
       </body>
     </html>
   );
 }
-
-// Simple client-side logging fallback wrapper for Server components
-const logger = {
-  info: (msg: string) => console.log(`[INFO] ${msg}`),
-};

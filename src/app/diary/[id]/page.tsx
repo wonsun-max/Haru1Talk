@@ -51,6 +51,18 @@ export default function DiaryPage() {
   }, []);
 
   useEffect(() => {
+    // Dynamically initialize Kakao SDK if available on mount
+    if (typeof window !== 'undefined' && window.Kakao && !window.Kakao.isInitialized()) {
+      try {
+        window.Kakao.init('66d47e37d3bc8228d965a409b6f944ea');
+        logger.info('Kakao Developers SDK initialized dynamically on client mount.');
+      } catch (err) {
+        logger.error('Failed to initialize Kakao SDK on mount', err);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     // Enforce active real Supabase token checks on mount
     async function verifyAndSummarize() {
       try {
