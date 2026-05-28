@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Square, Volume2, Sparkles, ArrowLeft, MoreVertical, Calendar } from 'lucide-react';
+import { Send, Mic, Square, Volume2, Sparkles, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
@@ -17,10 +17,9 @@ interface Message {
 /**
  * Haru Talk Dialogue Space.
  * 
- * WHY: Provides the messaging room. Handles loading past context,
- * recording dynamic voice payloads (MediaRecorder web buffers) to proxy Whisper STT,
- * streaming synthesized audio outputs via OpenAI TTS proxy, and tracking
- * turn counts to suggest summaries organically.
+ * WHY: Provides a production-only communication room interface. Connects users strictly
+ * to the secure backend proxies for OpenAI completions, Whisper speech transcriptions, and
+ * OpenAI TTS streaming voices, backed by database session token verification.
  */
 export default function ChatPage() {
   const { id: sessionId } = useParams() as { id: string };
@@ -31,7 +30,6 @@ export default function ChatPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTtsPlaying, setIsTtsPlaying] = useState<string | null>(null);
   const [userTurnCount, setUserTurnCount] = useState(0);
-  const [isMock, setIsMock] = useState(false);
   const [token, setToken] = useState<string>('');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -42,26 +40,22 @@ export default function ChatPage() {
     const savedPersona = localStorage.getItem('haru_talk_persona') as 'warm_f' | 'rational_t' | 'dog_c' || 'warm_f';
     setPersona(savedPersona);
 
-    // Prioritize loading active real Supabase token configurations
-    async function resolveActiveSession() {
+    // Enforce active real Supabase token checks on mount
+    async function checkAuthSession() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user && !sessionId.startsWith('mock-')) {
-          setIsMock(false);
+        if (session?.user) {
           loadRealHistory();
-          return;
+        } else {
+          logger.warn('Unauthenticated access attempt to dialogue room. Redirecting to landing.');
+          window.location.href = '/';
         }
       } catch (err) {
-        logger.error('Failed checking active Supabase session on chat startup', err);
+        logger.error('Failed to verify active authentication session on chat startup', err);
+        window.location.href = '/';
       }
-
-      // Default mock fallback
-      setIsMock(true);
-      loadMockHistory(savedPersona);
-      logger.info('Mock mode initialized for dialogue room.');
     }
-
-    resolveActiveSession();
+    checkAuthSession();
   }, [sessionId]);
 
   useEffect(() => {
@@ -70,43 +64,9 @@ export default function ChatPage() {
   }, [messages, isAiTyping]);
 
   /**
-   * Restores simulated mock message thread from client cache.
-   */
-  const loadMockHistory = (selectedPersona: string) => {
-    const mockMsgs = JSON.parse(localStorage.getItem(`haru_talk_mock_msgs_${sessionId}`) || '[]');
-    if (mockMsgs.length === 0) {
-      // First greeting message based on Persona
-      let greeting = '';
-      switch (selectedPersona) {
-        case 'rational_t':
-          greeting = '안녕. 오늘 하루는 어땠어? 오늘 있었던 주요 사건과 생각들을 차분히 정리해 보자. 피드백이나 나눌 고민이 있다면 얘기해줘.';
-          break;
-        case 'dog_c':
-          greeting = '주인님 안녕! 왈왈! 꼬리 붕붕! 주인님 오늘 하루 어땠어멍? 멍뭉이한테 어서 다 털어놓으라멍! 귀 쫑긋!';
-          break;
-        case 'warm_f':
-        default:
-          greeting = '안녕! 오늘 하루도 참 고생 많았어. 힘든 일은 없었니? 네가 어떤 하루를 보냈는지 찬찬히 이야기해줘. 나는 들을 준비가 됐어.';
-          break;
-      }
-      const initialGreeting: Message = {
-        id: 'initial-greeting-uuid',
-        sender: 'ai',
-        content: greeting,
-        created_at: new Date().toISOString(),
-      };
-      setMessages([initialGreeting]);
-      localStorage.setItem(`haru_talk_mock_msgs_${sessionId}`, JSON.stringify([initialGreeting]));
-    } else {
-      setMessages(mockMsgs);
-      // count user turns
-      const userTurns = mockMsgs.filter((m: Message) => m.sender === 'user').length;
-      setUserTurnCount(userTurns);
-    }
-  };
-
-  /**
    * Retrieves live database message records and authenticates token.
+   * 
+   * WHY: Renders authentic message history streams saved in the database for the active session.
    */
   const loadRealHistory = async () => {
     try {
@@ -117,7 +77,7 @@ export default function ChatPage() {
       }
       setToken(supabaseSession.access_token);
 
-      // Fetch session data to get persona
+      // Fetch session details to load the corresponding AI persona
       const { data: sessionData, error: sErr } = await supabase
         .from('chat_sessions')
         .select('persona')
@@ -127,7 +87,7 @@ export default function ChatPage() {
         setPersona(sessionData.persona as 'warm_f' | 'rational_t' | 'dog_c');
       }
 
-      // Fetch message logs
+      // Fetch past chat logs ordered by creation timestamps
       const { data: dbMessages, error: mErr } = await supabase
         .from('chat_messages')
         .select('*')
@@ -137,7 +97,6 @@ export default function ChatPage() {
       if (mErr) throw mErr;
 
       if (!dbMessages || dbMessages.length === 0) {
-        // AI sends first greeting by invoking API
         setIsAiTyping(true);
         let firstMsg = '';
         switch (sessionData?.persona) {
@@ -153,7 +112,7 @@ export default function ChatPage() {
             break;
         }
 
-        // Save AI first greeting into db
+        // Write AI initial greeting to database
         await supabase.from('chat_messages').insert({
           session_id: sessionId,
           sender: 'ai',
@@ -185,7 +144,9 @@ export default function ChatPage() {
   };
 
   /**
-   * dispatches a user message to either Mock storage or Real backend.
+   * Dispatches a user message to the live backend chat route.
+   * 
+   * WHY: Proxies prompts to the secure OpenAI completion endpoint and preserves history logs.
    */
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
@@ -206,48 +167,8 @@ export default function ChatPage() {
     const nextTurnCount = userTurnCount + 1;
     setUserTurnCount(nextTurnCount);
 
-    if (isMock) {
-      // Mock flow
-      localStorage.setItem(`haru_talk_mock_msgs_${sessionId}`, JSON.stringify(updatedMsgs));
-      
-      // Simulate AI thinking and replying
-      setTimeout(() => {
-        let response = '';
-        if (nextTurnCount >= 5) {
-          response = '우와, 오늘 정말 다양한 이야기를 많이 나누었네! 대화의 내용이 아주 알찬 것 같아. 이제 이 대화를 바탕으로 오늘의 일기를 정리해 볼까? 화면 상단의 "일기 작성하기" 버튼을 눌러줘!';
-        } else {
-          switch (persona) {
-            case 'rational_t':
-              response = `그 상황에 대해서 너가 느꼈던 감정보다는, 그 상황에서 배운 점이나 개선할 수 있는 행동은 무엇이었을까? 차분히 설명해줘. (현재 진행 턴: ${nextTurnCount}/5)`;
-              break;
-            case 'dog_c':
-              response = `와아! 꼬리를 미친듯이 흔드는 중! 왈왈! 멍멍! 그랬단 말이야멍? 진짜 신기하다왈! 다음은 어떻게 됐어멍? (현재 진행 턴: ${nextTurnCount}/5)`;
-              break;
-            case 'warm_f':
-            default:
-              response = `오, 그랬구나... 마음이 꽤 복잡했을 것 같아. 그 당시 어떤 기분이 가장 크게 들었는지 나에게 얘기해 주겠니? 내가 토닥여 줄게. (현재 진행 턴: ${nextTurnCount}/5)`;
-              break;
-          }
-        }
-
-        const newAiMsg: Message = {
-          id: `ai-msg-${Date.now()}`,
-          sender: 'ai',
-          content: response,
-          created_at: new Date().toISOString(),
-        };
-
-        const finalMsgs = [...updatedMsgs, newAiMsg];
-        setMessages(finalMsgs);
-        localStorage.setItem(`haru_talk_mock_msgs_${sessionId}`, JSON.stringify(finalMsgs));
-        setIsAiTyping(false);
-      }, 1000);
-
-      return;
-    }
-
     try {
-      // Real flow via API Route
+      // Real API proxy dispatch
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -266,9 +187,9 @@ export default function ChatPage() {
 
       let replyText = data.reply;
 
-      // Suggest diary automatically on turn 5
+      // Suggest diary compilation at exactly 5 dialogue turns
       if (nextTurnCount === 5) {
-        replyText = replyText + '\n\n오늘 정말 유익한 대화를 많이 나눴어. 이쯤에서 나눈 이야기를 정리해 예쁜 밤의 일기장을 만들어 줄까? 언제든 상단의 "일기 생성하기" 단추를 누르면 돼!';
+        replyText = replyText + '\n\n오늘 정말 많은 이야기를 나눴어. 이쯤에서 나눈 이야기를 정리해 예쁜 밤의 일기장을 만들어 줄까? 언제든 상단의 "일기 작성하기" 단추를 누르면 돼!';
       }
 
       setMessages(prev => [...prev, {
@@ -278,7 +199,7 @@ export default function ChatPage() {
         created_at: new Date().toISOString(),
       }]);
     } catch (err) {
-      logger.error('Failed to dispatch chat sequence', err);
+      logger.error('Failed to dispatch chat sequence to server APIs', err);
       alert('AI가 졸고 있는 것 같습니다. 다시 메세지를 전송해 주세요.');
     } finally {
       setIsAiTyping(false);
@@ -287,6 +208,8 @@ export default function ChatPage() {
 
   /**
    * Initializes browser audio recording triggers.
+   * 
+   * WHY: Captures microphone audio inputs in optimal browser capabilities (webm / mp4 fallback).
    */
   const startAudioRecording = async () => {
     try {
@@ -333,6 +256,8 @@ export default function ChatPage() {
 
   /**
    * Halts active recording buffers.
+   * 
+   * WHY: Triggers the stop callback of the MediaRecorder to process the completed blob stream.
    */
   const stopAudioRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
@@ -343,25 +268,10 @@ export default function ChatPage() {
 
   /**
    * Uploads recorded audio blobs to Whisper STT proxy and sends the transcription.
+   * 
+   * WHY: Converts voice recording data into text securely via Whisper-1 on the server.
    */
   const uploadAudioPayload = async (blob: Blob, extension = 'webm') => {
-    // If Mock, simulate voice text input immediately
-    if (isMock) {
-      setIsAiTyping(true);
-      setTimeout(() => {
-        const transcribedMocks = [
-          '오늘 회사에서 진짜 힘든 일 있었는데 얘기 좀 들어봐.',
-          '오늘 친구랑 맛있는 거 먹고 와서 너무 기분 좋아!',
-          '그냥 조용히 나를 토닥여주는 노래 같은 하루였어.',
-        ];
-        const randomIndex = Math.floor(Math.random() * transcribedMocks.length);
-        const randomText = transcribedMocks.at(randomIndex) || '';
-        logger.info(`Simulated Whisper STT output: "${randomText}"`);
-        handleSendMessage(randomText);
-      }, 1000);
-      return;
-    }
-
     try {
       setIsAiTyping(true);
       const audioFormData = new FormData();
@@ -394,6 +304,8 @@ export default function ChatPage() {
 
   /**
    * Proxies text values to OpenAI TTS to stream natural voice outputs.
+   * 
+   * WHY: Requests natural voice speech stream binaries dynamically matching the persona.
    */
   const triggerTextToSpeech = async (msgId: string, text: string) => {
     if (isTtsPlaying === msgId) {
@@ -403,24 +315,8 @@ export default function ChatPage() {
 
     setIsTtsPlaying(msgId);
 
-    // If Mock, use browser native speech synthesis (zero-cost offline fallback)
-    if (isMock) {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ko-KR';
-        utterance.rate = 1.0;
-        utterance.onend = () => setIsTtsPlaying(null);
-        window.speechSynthesis.speak(utterance);
-      } else {
-        logger.warn('Web speech synthesis not supported locally.');
-        setIsTtsPlaying(null);
-      }
-      return;
-    }
-
     try {
-      let voiceCode = 'alloy'; // default warm_f voice
+      let voiceCode = 'alloy';
       if (persona === 'rational_t') voiceCode = 'onyx';
       if (persona === 'dog_c') voiceCode = 'nova';
 
@@ -457,9 +353,15 @@ export default function ChatPage() {
   };
 
   /**
-   * Routes the client to the loading summary processing screen.
+   * Navigates user to the diary compilation screen after validating minimum dialogue turns.
+   * 
+   * WHY: Prevents users from generating empty/fictional summaries if no conversation has taken place.
    */
   const handleCompileDiary = () => {
+    if (userTurnCount < 1) {
+      alert('최소 1회 이상 대화를 전송하셔야 오늘의 일기장을 완성할 수 있습니다! 아래 입력창에 오늘 하루 있었던 소소한 이야기나 속마음을 들려주세요.');
+      return;
+    }
     window.location.href = `/diary/${sessionId}`;
   };
 
@@ -473,7 +375,7 @@ export default function ChatPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => window.location.href = '/setup'}
-            className="p-1.5 rounded-lg hover:bg-slate-800/50 text-slate-400 hover:text-white transition-colors"
+            className="p-1.5 rounded-lg hover:bg-slate-800/50 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -486,7 +388,7 @@ export default function ChatPage() {
               </span>
             </h1>
             <p className="text-[9px] text-slate-400 mt-0.5">
-              {isMock ? '체험용 로컬 세션 진행 중' : '실시간 보안 암호화 통신'}
+              실시간 보안 암호화 통신
             </p>
           </div>
         </div>
@@ -495,7 +397,7 @@ export default function ChatPage() {
         <button
           id="diary-create-btn"
           onClick={handleCompileDiary}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white text-[11px] font-bold shadow-[0_4px_15px_rgba(167,139,250,0.25)] transition-all active:scale-[0.98]"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white text-[11px] font-bold shadow-[0_4px_15px_rgba(167,139,250,0.25)] transition-all active:scale-[0.98] cursor-pointer"
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span>일기 작성하기 ({userTurnCount}/5)</span>
@@ -545,7 +447,7 @@ export default function ChatPage() {
                     <button
                       id={`tts-play-${msg.id}`}
                       onClick={() => triggerTextToSpeech(msg.id, msg.content)}
-                      className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border transition-all ${
+                      className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border transition-all cursor-pointer ${
                         isTtsPlaying === msg.id
                           ? 'text-purple-300 border-purple-500/30 bg-purple-500/10'
                           : 'text-slate-400 border-slate-800 hover:text-white'
@@ -568,9 +470,9 @@ export default function ChatPage() {
               ••
             </div>
             <div className="rounded-2xl p-3 bg-slate-900/40 border border-slate-900 text-slate-300 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot" />
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot" />
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot" />
+              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" />
+              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.2s' }} />
+              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.4s' }} />
             </div>
           </div>
         )}
@@ -606,9 +508,8 @@ export default function ChatPage() {
               <button
                 id="voice-stop-btn"
                 onClick={stopAudioRecording}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_4px_15px_rgba(220,38,38,0.25)] active:scale-[0.98]"
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_4px_15px_rgba(220,38,38,0.25)] active:scale-[0.98] cursor-pointer"
               >
-                <Square className="w-3.5 h-3.5 fill-current" />
                 <span>녹음 완료 및 전송</span>
               </button>
             </motion.div>
@@ -624,7 +525,7 @@ export default function ChatPage() {
               id="voice-start-btn"
               onClick={startAudioRecording}
               disabled={isAiTyping}
-              className="w-11 h-11 rounded-xl bg-slate-900/80 hover:bg-purple-950/20 hover:text-purple-300 border border-slate-800 text-slate-400 flex items-center justify-center transition-all shrink-0 active:scale-[0.95] disabled:opacity-50"
+              className="w-11 h-11 rounded-xl bg-slate-900/80 hover:bg-purple-950/20 hover:text-purple-300 border border-slate-800 text-slate-400 flex items-center justify-center transition-all shrink-0 active:scale-[0.95] disabled:opacity-50 cursor-pointer"
             >
               <Mic className="w-5 h-5" />
             </button>
@@ -649,7 +550,7 @@ export default function ChatPage() {
             id="chat-send-btn"
             onClick={() => handleSendMessage()}
             disabled={isAiTyping || isRecording || !inputText.trim()}
-            className="w-11 h-11 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-slate-900/60 text-white flex items-center justify-center transition-all shrink-0 active:scale-[0.95] shadow-[0_4px_15px_rgba(147,51,234,0.2)] disabled:shadow-none disabled:opacity-50"
+            className="w-11 h-11 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-slate-900/60 text-white flex items-center justify-center transition-all shrink-0 active:scale-[0.95] shadow-[0_4px_15px_rgba(147,51,234,0.2)] disabled:shadow-none disabled:opacity-50 cursor-pointer"
           >
             <Send className="w-4 h-4 fill-current" />
           </button>

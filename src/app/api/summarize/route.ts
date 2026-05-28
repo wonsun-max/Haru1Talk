@@ -72,6 +72,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Bad Request: Cannot generate a diary from an empty conversation.' }, { status: 400 });
     }
 
+    // Senior Developer Constraint Check: Strictly prohibit diary summarization with zero user dialogue turns
+    const userTurns = messages.filter((msg) => msg.sender === 'user');
+    if (userTurns.length === 0) {
+      logger.warn(`Diary summary rejected: zero user turns in session=${sessionId}`);
+      return NextResponse.json({
+        error: 'Bad Request: 최소 1회 이상 대화를 나눠야 오늘의 일기가 생성될 수 있습니다. 대화방에서 속마음을 들려주세요!'
+      }, { status: 400 });
+    }
+
     // 5. Compile chat script for the AI prompt
     const chatTranscript = messages
       .map((msg) => `${msg.sender === 'user' ? '유저' : 'AI'}: ${msg.content}`)

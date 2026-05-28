@@ -18,17 +18,15 @@ interface DiaryEntry {
 /**
  * AI Diary Summarization Viewer Page.
  * 
- * WHY: Initiates summarization, renders high-fidelity custom cards
- * that dynamically change colors, gradients, and emoticons based on
- * the AI-extracted emotion, and handles clipboard/share bindings.
+ * WHY: Triggers secure backend summarization parsing via GPT-4o-mini,
+ * and renders high-fidelity dynamic emotional diary cards with clipboard sharing bindings,
+ * protected by active session authentication.
  */
 export default function DiaryPage() {
-  const { id: sessionId } = useParams() as { id: string };
+  const { sessionId } = useParams() as { sessionId: string };
   const [loading, setLoading] = useState(true);
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
   const [diary, setDiary] = useState<DiaryEntry | null>(null);
-  const [isMock, setIsMock] = useState(false);
-  const [token, setToken] = useState<string>('');
 
   const loadingPhrases = [
     '오늘 나눈 대화 기록을 모으는 중...',
@@ -47,87 +45,28 @@ export default function DiaryPage() {
   }, []);
 
   useEffect(() => {
-    async function checkDiarySession() {
+    // Enforce active real Supabase token checks on mount
+    async function verifyAndSummarize() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user && !sessionId.startsWith('mock-')) {
-          setIsMock(false);
+        if (session?.user) {
           generateRealDiary();
-          return;
+        } else {
+          logger.warn('Unauthenticated access attempt to diary compiler. Redirecting to landing.');
+          window.location.href = '/';
         }
       } catch (err) {
-        logger.error('Failed to retrieve user session on diary page', err);
+        logger.error('Failed to verify active authentication session on diary page', err);
+        window.location.href = '/';
       }
-
-      setIsMock(true);
-      generateMockDiary();
     }
-
-    checkDiarySession();
+    verifyAndSummarize();
   }, [sessionId]);
 
   /**
-   * Generates simulated diary payload locally (for offline mockup).
-   */
-  const generateMockDiary = () => {
-    setTimeout(() => {
-      const savedPersona = localStorage.getItem('haru_talk_persona') || 'warm_f';
-      let mockTitle = '마음 한 구석이 웅크러졌던 수요일';
-      let mockContent = 
-        '오늘 회사에서 생각대로 일이 풀리지 않아 속상하고 지치는 하루를 보냈다. ' +
-        '회의시간 내내 작아지는 기분이었고, 내가 잘하고 있는지 회의감이 들었다. ' +
-        '하루 종일 억눌려 있던 무거운 마음을 밤이 되어서야 친구에게 털어놓았다. ' +
-        '다정한 위로를 받으며 나의 지친 감정을 있는 그대로 직시하게 되었고, ' +
-        '비로소 오늘 밤은 조금 편안하게 잠에 들 수 있을 것 같다. 내일은 분명 한 걸음 더 나은 날이 될 테니까.';
-      
-      let mockEmotion: 'happy' | 'sad' | 'calm' | 'tired' | 'angry' = 'tired';
-      let mockScore = 3.8;
-
-      if (savedPersona === 'dog_c') {
-        mockTitle = '멍멍이 칭찬 덕에 기분이 나아진 하루';
-        mockContent = 
-          '오늘 유독 지쳐서 퇴근했는데, 나를 반겨주는 귀여운 멍멍이 프렌드 덕분에 크게 웃을 수 있었다. ' +
-          '내가 사소한 실수를 고민했던 것들이 아무것도 아닌 것처럼, 온 마음을 다해 날 우쭈쭈 해주는 ' +
-          '대화를 나누면서 내 마음도 한결 가벼워졌다. 나를 최고라고 믿어주는 반려견 덕분에 내일도 ' +
-          '힘을 내서 씩씩하게 걸어가야겠다는 생각이 드는 밤이다!';
-        mockEmotion = 'happy';
-        mockScore = 8.5;
-      } else if (savedPersona === 'rational_t') {
-        mockTitle = '어려운 회의 상황을 통해 배운 이정표';
-        mockContent = 
-          '비록 회의 중 난관이 생겨 머리가 지끈거렸던 수요일이었지만, 대화를 나누면서 문제의 핵심을 ' +
-          '더 차분하게 들여다볼 기회를 가졌다. 감정적으로 웅크러들어 있기보다 문제를 어떻게 해결해 나갈지 ' +
-          '액션 플랜을 짜야 함을 깨달았다. 친구가 건넨 실용적인 피드백을 기록해 두고 내일 아침 출근길에 ' +
-          '바로 검토해서 동료들과 조율해 나가야겠다. 배움이 있어 성장한 유익한 날이다.';
-        mockEmotion = 'calm';
-        mockScore = 6.8;
-      }
-
-      const mockEntry: DiaryEntry = {
-        title: mockTitle,
-        content: mockContent,
-        emotion: mockEmotion,
-        date: new Date().toISOString().split('T')[0],
-        sentiment_score: mockScore,
-      };
-
-      // Store in mock archive
-      const existingDiaries = JSON.parse(localStorage.getItem('haru_talk_mock_diaries') || '[]');
-      existingDiaries.push({
-        ...mockEntry,
-        id: `mock-diary-${Date.now()}`,
-        session_id: sessionId,
-      });
-      localStorage.setItem('haru_talk_mock_diaries', JSON.stringify(existingDiaries));
-
-      setDiary(mockEntry);
-      setLoading(false);
-      logger.info('Simulated diary generation completed.');
-    }, 4500); // 4.5 seconds starry animation for elite premium feel
-  };
-
-  /**
    * Calls secure backend summarize route with user access tokens.
+   * 
+   * WHY: Triggers the server-side GPT summarizer pipeline to save the final diary row to PostgreSQL.
    */
   const generateRealDiary = async () => {
     try {
@@ -137,9 +76,8 @@ export default function DiaryPage() {
         return;
       }
       const userToken = supabaseSession.access_token;
-      setToken(userToken);
 
-      // Call API
+      // Request live summary compilation
       const response = await fetch('/api/summarize', {
         method: 'POST',
         headers: {
@@ -164,16 +102,18 @@ export default function DiaryPage() {
         sentiment_score: savedDiary.sentiment_score,
       });
       setLoading(false);
-      logger.info('Real database diary summary completed.');
-    } catch (err) {
-      logger.error('Failed to trigger database summarizer', err);
-      alert('일기 생성 중 일시적인 오류가 발생했습니다. 대화 턴이 최소 1개 이상 존재해야 일기가 완성됩니다.');
+      logger.info('Real database diary summary completed successfully.');
+    } catch (err: any) {
+      logger.error('Failed to trigger database summarizer pipeline', err);
+      alert(err.message || '일기 생성 중 오류가 발생했습니다. 최소 1회 이상 대화를 전송해야 일기장이 완성됩니다.');
       window.location.href = `/chat/${sessionId}`;
     }
   };
 
   /**
    * Maps emotion keys to appropriate emojis, Korean texts, and gradients.
+   * 
+   * WHY: Returns high-fidelity styling tokens matching the extracted mood.
    */
   const getEmotionDetails = (emotion: string) => {
     switch (emotion) {
@@ -236,6 +176,8 @@ export default function DiaryPage() {
 
   /**
    * Activates device share triggers or copies diary string to clipboard.
+   * 
+   * WHY: Exposes native device sharing or clipboard fallbacks safely.
    */
   const handleShareDiary = async () => {
     if (!diary) return;
@@ -248,14 +190,14 @@ export default function DiaryPage() {
           text: shareText,
         });
       } catch (err) {
-        logger.warn('User dismissed native share.', err);
+        logger.warn('User dismissed native share dialog', err);
       }
     } else {
       try {
         await navigator.clipboard.writeText(shareText);
         alert('일기 내용이 클립보드에 깔끔하게 복사되었습니다!');
       } catch (err) {
-        logger.error('Failed to copy text', err);
+        logger.error('Failed to copy text payload to clipboard', err);
       }
     }
   };
@@ -343,7 +285,7 @@ export default function DiaryPage() {
               {/* STYLISH GLASS DIARY CARD CARD */}
               <div className={`glass-panel-heavy rounded-3xl p-6 ${emotionMeta.shadow} border ${emotionMeta.border} relative overflow-hidden transition-all duration-500`}>
                 
-                {/* Dynamic Gradient ambient corner glow */}
+                {/* Dynamic Gradient corner glow */}
                 <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl ${emotionMeta.gradient} blur-[45px] rounded-full pointer-events-none`} />
 
                 {/* Sub-header Mood Indicator */}
@@ -373,9 +315,6 @@ export default function DiaryPage() {
 
                 {/* Card Main: Title & Content */}
                 <div className="relative">
-                  {/* Subtle Grid texture */}
-                  <div className="absolute inset-0 pointer-events-none opacity-20 bg-repeat bg-cover rounded-2xl diary-paper" />
-
                   <div className="relative p-2">
                     <h2 className="text-base font-bold text-white mb-4 tracking-tight">
                       "{diary.title}"
@@ -404,7 +343,7 @@ export default function DiaryPage() {
                 <button
                   id="go-archive-btn"
                   onClick={() => window.location.href = '/archive'}
-                  className="w-full h-12 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-bold text-xs flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-[0_4px_20px_rgba(167,139,250,0.2)]"
+                  className="w-full h-12 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-bold text-xs flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-[0_4px_20px_rgba(167,139,250,0.25)] cursor-pointer"
                 >
                   <FolderHeart className="w-4 h-4" />
                   <span>나의 일기 회고첩(아카이브) 보러가기</span>
@@ -417,7 +356,7 @@ export default function DiaryPage() {
                   <button
                     id="share-diary-btn"
                     onClick={handleShareDiary}
-                    className="h-11 rounded-2xl bg-slate-900 hover:bg-slate-800/80 text-slate-300 hover:text-white border border-slate-800 text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                    className="h-11 rounded-2xl bg-slate-900 hover:bg-slate-800/80 text-slate-300 hover:text-white border border-slate-800 text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer"
                   >
                     <Share2 className="w-4 h-4" />
                     <span>일기 공유/복사하기</span>
@@ -426,7 +365,7 @@ export default function DiaryPage() {
                   {/* Start new day dialog */}
                   <button
                     onClick={() => window.location.href = '/setup'}
-                    className="h-11 rounded-2xl bg-slate-900 hover:bg-slate-800/80 text-slate-300 hover:text-white border border-slate-800 text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                    className="h-11 rounded-2xl bg-slate-900 hover:bg-slate-800/80 text-slate-300 hover:text-white border border-slate-800 text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer"
                   >
                     <Heart className="w-4 h-4 text-purple-400" />
                     <span>새로운 회고 시작</span>

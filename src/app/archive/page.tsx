@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Calendar, BookOpen, Trash2, X, Heart, ArrowLeft, ShieldAlert } from 'lucide-react';
+import { Calendar, BookOpen, Trash2, X, Heart, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
@@ -18,67 +18,40 @@ interface ArchiveDiary {
 /**
  * Haru Talk Archive Gallery Page.
  * 
- * WHY: Provides persistent diary history. Allows users to retrieve
- * all past generated diaries (from Supabase or local mock caches),
- * search/filter by dates, view them in rich expanding overlay modals,
- * and perform deletion operations safely.
+ * WHY: Renders authentic list records of all past completed diaries for the active user,
+ * pulled directly from the Supabase diaries table, complete with deletion and detail modal overlays.
  */
 export default function ArchivePage() {
   const [diaries, setDiaries] = useState<ArchiveDiary[]>([]);
   const [selectedDiary, setSelectedDiary] = useState<ArchiveDiary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isMock, setIsMock] = useState(false);
-  const [token, setToken] = useState<string>('');
 
   useEffect(() => {
-    async function checkArchiveSession() {
+    // Enforce active real Supabase token checks on mount
+    async function verifyAndLoadArchive() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          setIsMock(false);
           loadRealArchive();
-          return;
+        } else {
+          logger.warn('Unauthenticated access attempt to archive gallery. Redirecting to landing.');
+          window.location.href = '/';
         }
       } catch (err) {
-        logger.error('Failed to retrieve user session on archive page', err);
+        logger.error('Failed to verify active authentication session on archive startup', err);
+        window.location.href = '/';
       }
-
-      setIsMock(true);
-      loadMockArchive();
     }
-
-    checkArchiveSession();
+    verifyAndLoadArchive();
   }, []);
 
   /**
-   * Retrieves simulated diaries stored in client local caches.
-   */
-  const loadMockArchive = () => {
-    try {
-      const mockDiaries = JSON.parse(localStorage.getItem('haru_talk_mock_diaries') || '[]');
-      // Sort by date descending
-      mockDiaries.sort((a: ArchiveDiary, b: ArchiveDiary) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setDiaries(mockDiaries);
-      setLoading(false);
-      logger.info('Simulated diaries fetched successfully.');
-    } catch (err) {
-      logger.error('Failed to parse simulated diaries', err);
-      setLoading(false);
-    }
-  };
-
-  /**
    * Fetches real SQL diaries entries ordered by target calendar dates.
+   * 
+   * WHY: Pulls diary logs securely utilizing the user's active session, honoring standard RLS.
    */
   const loadRealArchive = async () => {
     try {
-      const { data: { session: supabaseSession } } = await supabase.auth.getSession();
-      if (!supabaseSession?.user) {
-        window.location.href = '/';
-        return;
-      }
-      setToken(supabaseSession.access_token);
-
       const { data: dbDiaries, error } = await supabase
         .from('diaries')
         .select('*')
@@ -97,7 +70,7 @@ export default function ArchivePage() {
         })));
       }
     } catch (err) {
-      logger.error('Failed to fetch real diaries archive', err);
+      logger.error('Failed to fetch real database diaries archive', err);
       alert('일기 아카이브 로드 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
@@ -105,20 +78,12 @@ export default function ArchivePage() {
   };
 
   /**
-   * Performs database deletion or mock array splicing operations.
+   * Performs database deletion.
+   * 
+   * WHY: Revokes and permanently purges diary rows from the Supabase diaries PostgreSQL table.
    */
   const handleDeleteDiary = async (diaryId: string) => {
     if (!confirm('정말로 이 일기를 아카이브에서 삭제하시겠습니까? 삭제 후에는 되돌릴 수 없습니다.')) {
-      return;
-    }
-
-    if (isMock) {
-      const mockDiaries = JSON.parse(localStorage.getItem('haru_talk_mock_diaries') || '[]');
-      const filtered = mockDiaries.filter((d: ArchiveDiary) => d.id !== diaryId);
-      localStorage.setItem('haru_talk_mock_diaries', JSON.stringify(filtered));
-      setDiaries(filtered);
-      setSelectedDiary(null);
-      logger.info(`Simulated diary=${diaryId} deleted successfully.`);
       return;
     }
 
@@ -134,13 +99,15 @@ export default function ArchivePage() {
       setSelectedDiary(null);
       logger.info(`Database diary=${diaryId} deleted successfully.`);
     } catch (err) {
-      logger.error('Failed to delete database diary', err);
+      logger.error('Failed to delete database diary row', err);
       alert('데이터베이스 일기 삭제에 실패했습니다.');
     }
   };
 
   /**
    * Translates active emotion keys to appropriate emoticons and colors.
+   * 
+   * WHY: Returns styling parameters matching the emotion key.
    */
   const getEmotionMetadata = (emotion: string) => {
     switch (emotion) {
@@ -168,7 +135,7 @@ export default function ArchivePage() {
       <header className="w-full max-w-xl flex justify-between items-center z-10 mb-8 select-none">
         <button
           onClick={() => window.location.href = '/setup'}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-xs font-semibold transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-xs font-semibold transition-all cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>메인으로</span>
@@ -181,7 +148,7 @@ export default function ArchivePage() {
 
         <button
           onClick={() => window.location.href = '/setup'}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white text-[10px] font-bold shadow-[0_2px_10px_rgba(167,139,250,0.15)] transition-all"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white text-[10px] font-bold shadow-[0_2px_10px_rgba(167,139,250,0.15)] transition-all cursor-pointer"
         >
           <Heart className="w-3 h-3 text-purple-200" />
           <span>새 일기 쓰기</span>
@@ -206,7 +173,7 @@ export default function ArchivePage() {
             </p>
             <button
               onClick={() => window.location.href = '/setup'}
-              className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition-colors active:scale-[0.98]"
+              className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition-colors active:scale-[0.98] cursor-pointer"
             >
               첫 회고 대화 시작하기
             </button>
@@ -279,7 +246,7 @@ export default function ArchivePage() {
               {/* Corner close button */}
               <button
                 onClick={() => setSelectedDiary(null)}
-                className="absolute top-4 right-4 p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                className="absolute top-4 right-4 p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -312,13 +279,13 @@ export default function ArchivePage() {
                 </p>
               </div>
 
-              {/* Action row (Delete, Share) */}
+              {/* Action row (Delete, Close) */}
               <div className="flex gap-3 mt-6 border-t border-slate-800/80 pt-4">
                 {/* Delete button */}
                 <button
                   id="delete-diary-btn"
                   onClick={() => handleDeleteDiary(selectedDiary.id)}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-900/60 hover:bg-red-950/20 text-slate-400 hover:text-red-300 border border-slate-800 hover:border-red-900/30 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors active:scale-[0.98]"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-900/60 hover:bg-red-950/20 text-slate-400 hover:text-red-300 border border-slate-800 hover:border-red-900/30 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors active:scale-[0.98] cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
                   <span>일기 영구 삭제</span>
@@ -327,7 +294,7 @@ export default function ArchivePage() {
                 {/* Close modal */}
                 <button
                   onClick={() => setSelectedDiary(null)}
-                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all active:scale-[0.98]"
+                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all active:scale-[0.98] cursor-pointer"
                 >
                   확인 완료
                 </button>
@@ -336,12 +303,6 @@ export default function ArchivePage() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {isMock && (
-        <p className="text-center text-[9px] text-purple-300/40 font-semibold mt-8 z-10">
-          * 현재 가상 체험 모드에서 작성된 로컬 일기 목록을 출력하고 있습니다.
-        </p>
-      )}
     </main>
   );
 }

@@ -2,25 +2,21 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, Lock, Sparkles, MessageSquare, Calendar, Mic, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Lock, Sparkles, MessageSquare, Calendar, Mic } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
 /**
- * Haru Talk Landing and OAuth Sign-In Page.
+ * Haru Talk Landing and Live Authentication Gateway.
  * 
- * WHY: Serves as the user acquisition gateway. Adheres to SEO guidelines
- * (using single h1, semantic HTML), displays security compliance notices,
- * and handles authenticating through Supabase OAuth (Google & Kakao)
- * with a developer-friendly interactive mock simulator if keys are not configured yet.
+ * WHY: Acts as the primary security access barrier. Restricts entry solely
+ * to authentic Cloud Supabase Auth sessions (supporting both Email/Password registrations
+ * and OAuth integrations) with absolutely zero offline simulator bypasses.
  */
 export default function LandingPage() {
-  const [isConfigured, setIsConfigured] = useState(true);
-  const [showSimulator, setShowSimulator] = useState(false);
-  const [simulatedName, setSimulatedName] = useState('하루톡 테스터');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // Email Auth states
+  // Production-only Email Authentication states
   const [authMethod, setAuthMethod] = useState<'oauth' | 'email'>('oauth');
   const [emailMode, setEmailMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
@@ -30,42 +26,31 @@ export default function LandingPage() {
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
-    // Check if Supabase keys are configured in local environment
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('your_supabase')) {
-      setIsConfigured(false);
-    }
-
-    // Auto check if user is already logged in
-    async function checkUser() {
+    // Proactively check and redirect if user session is already verified
+    async function checkActiveSession() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          logger.info('Active user session detected. Redirecting to /setup.');
+          logger.info('Verified session active. Directing straight to companion setup.');
           window.location.href = '/setup';
         }
       } catch (err) {
-        logger.error('Session retrieve failure in landing page', err);
+        logger.error('Session acquisition failure on landing page initialization', err);
       }
     }
-    checkUser();
+    checkActiveSession();
   }, []);
 
   /**
-   * Triggers the OAuth sign-in flow via Supabase.
+   * Triggers secure social OAuth flow (Google / Kakao) via Supabase.
    * 
-   * WHY: Directs the user to the selected OAuth provider (Kakao / Google).
-   * Falls back to simulation options to protect the developer flow if keys are not ready.
+   * WHY: delegates credential handshakes directly to trusted third parties, returning
+   * authenticated web JWT profiles to the setup environment.
    */
   const handleSocialLogin = async (provider: 'google' | 'kakao') => {
-    if (!isConfigured) {
-      logger.warn(`Environment variables not configured. Opening mock simulator for ${provider}.`);
-      setShowSimulator(true);
-      return;
-    }
-
     setIsLoggingIn(true);
+    setErrorMessage('');
+    setSuccessMessage('');
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
@@ -74,22 +59,22 @@ export default function LandingPage() {
         },
       });
       if (error) throw error;
-    } catch (err) {
-      logger.error(`OAuth login error through provider=${provider}`, err);
+    } catch (err: any) {
+      logger.error(`Social OAuth authentication request failed on provider=${provider}`, err);
+      setErrorMessage(err.message || '소셜 로그인 진행 도중 에러가 발생했습니다. 개발자 옵션 설정을 확인해 주세요.');
       setIsLoggingIn(false);
-      alert('소셜 로그인 중 에러가 발생했습니다. .env.local 설정을 다시 한번 확인해 주세요.');
     }
   };
 
   /**
-   * Executes email/password authentication sign-in.
+   * Triggers credentialed email/password sign-in.
    * 
-   * WHY: Enables standard credentialed logins for secure authentication in production models.
+   * WHY: Authenticates existing client profiles securely in real-time, verifying passwords.
    */
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setErrorMessage('이메일과 비밀번호를 모두 입력해 주세요.');
+      setErrorMessage('이메일과 비밀번호를 입력해 주세요.');
       return;
     }
     setIsLoggingIn(true);
@@ -101,28 +86,28 @@ export default function LandingPage() {
         password,
       });
       if (error) throw error;
-      logger.info('Email authentication sign-in successful.');
+      logger.info('Email authentication login successful.');
       window.location.href = '/setup';
     } catch (err: any) {
-      logger.error('Email login request failure', err);
-      setErrorMessage(err.message || '로그인에 실패했습니다. 비밀번호를 다시 확인해 주세요.');
+      logger.error('Email authentication login request failed', err);
+      setErrorMessage(err.message || '로그인에 실패했습니다. 이메일 및 비밀번호를 다시 점검해 주세요.');
       setIsLoggingIn(false);
     }
   };
 
   /**
-   * Executes email/password account creation.
+   * Triggers credentialed email account sign-up.
    * 
-   * WHY: Provisions new user identities in Supabase and writes their target screen nickname to the auth user metadata.
+   * WHY: Instantiates fresh user identities in Supabase auth tables and registers nicknames.
    */
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password || !nickname) {
-      setErrorMessage('닉네임, 이메일, 비밀번호를 모두 입력해 주세요.');
+      setErrorMessage('닉네임, 이메일, 비밀번호를 전부 입력해 주세요.');
       return;
     }
     if (password.length < 6) {
-      setErrorMessage('비밀번호는 보안을 위해 최소 6글자 이상이어야 합니다.');
+      setErrorMessage('비밀번호는 보안 규정 상 최소 6글자 이상이어야 합니다.');
       return;
     }
     setIsLoggingIn(true);
@@ -142,38 +127,18 @@ export default function LandingPage() {
       if (error) throw error;
 
       if (data.session) {
-        logger.info('Account created and logged in automatically.');
+        logger.info('Account created and instantly authenticated.');
         window.location.href = '/setup';
       } else {
-        logger.info('Account created successfully, verification email dispatched.');
-        setSuccessMessage('회원가입에 성공했습니다! 이메일 편지함을 확인하셔서 이메일 인증을 완료해 주세요.');
+        logger.info('Account creation successful, dispatching verification token.');
+        setSuccessMessage('회원가입에 성공했습니다! 가입하신 이메일의 편지함에서 인증 링크를 눌러 가입을 승인해 주세요.');
         setIsLoggingIn(false);
       }
     } catch (err: any) {
-      logger.error('Email sign up request failure', err);
-      setErrorMessage(err.message || '회원가입 도중 에러가 발생했습니다.');
+      logger.error('Email authentication signup request failed', err);
+      setErrorMessage(err.message || '회원가입 요청 중 비정상적인 오류가 발생했습니다.');
       setIsLoggingIn(false);
     }
-  };
-
-  /**
-   * Executes a simulated mock login session.
-   * 
-   * WHY: Provides a seamless preview of the application's premium UI/UX
-   * even in environment setups without ready database keys.
-   */
-  const executeSimulation = () => {
-    setIsLoggingIn(true);
-    setTimeout(() => {
-      // Simulate localstorage credentials for route guards
-      localStorage.setItem('haru_talk_mock_auth', JSON.stringify({
-        id: 'mock-user-uuid-1234',
-        name: simulatedName,
-        email: 'test@harutalk.com',
-        avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
-      }));
-      window.location.href = '/setup';
-    }, 1200);
   };
 
   return (
@@ -285,7 +250,7 @@ export default function LandingPage() {
                   <span>Google 계정으로 계속하기</span>
                 </button>
 
-                <div className="flex items-center my-2 text-slate-500 text-[11px] font-semibold">
+                <div className="flex items-center my-2 text-slate-500 text-[11px] font-semibold font-sans">
                   <div className="flex-1 h-[1px] bg-slate-800" />
                   <span className="px-3">또는</span>
                   <div className="flex-1 h-[1px] bg-slate-800" />
@@ -454,63 +419,6 @@ export default function LandingPage() {
           © 2026 Haru Talk. All rights reserved. Premium Nightly Diary.
         </p>
       </div>
-
-      {/* STAGE MOCK SIMULATOR MODAL */}
-      <AnimatePresence>
-        {showSimulator && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="glass-panel-heavy rounded-3xl max-w-sm w-full p-6 text-center border border-purple-500/20"
-            >
-              <Sparkles className="w-10 h-10 text-purple-300 mx-auto mb-4 animate-pulse" />
-              
-              <h3 className="text-lg font-bold text-white mb-2">개발용 로컬 체험 모드</h3>
-              
-              <p className="text-xs text-slate-300 leading-normal mb-5">
-                현재 Supabase 환경 변수가 활성화되지 않았습니다. 프론트엔드 및 AI 연동 전체 플로우를 즉시 검증하실 수 있도록 **가상 테스트 세션**으로 진입합니다.
-              </p>
-
-              <div className="text-left mb-5">
-                <label className="text-[10px] font-bold text-purple-300 block mb-1">테스터 닉네임 설정</label>
-                <input
-                  type="text"
-                  value={simulatedName}
-                  onChange={(e) => setSimulatedName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl glass-input text-xs font-semibold"
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <button
-                  id="simulator-start-btn"
-                  onClick={executeSimulation}
-                  disabled={isLoggingIn}
-                  className="w-full py-3 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] disabled:opacity-50"
-                >
-                  {isLoggingIn ? '가상 세션 생성 중...' : '가상 세션으로 시작하기'}
-                  {!isLoggingIn && <ArrowRight className="w-4 h-4" />}
-                </button>
-                
-                <button
-                  onClick={() => setShowSimulator(false)}
-                  disabled={isLoggingIn}
-                  className="w-full py-2.5 text-slate-400 hover:text-white font-semibold text-xs transition-colors"
-                >
-                  돌아가기
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </main>
   );
 }

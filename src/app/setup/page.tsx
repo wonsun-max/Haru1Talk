@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, MessageCircle, Heart, Brain, Bone, Bell, ArrowRight, LogOut } from 'lucide-react';
+import { Sparkles, Heart, Brain, Bone, Bell, ArrowRight, LogOut } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
@@ -13,101 +13,62 @@ interface UserProfile {
 }
 
 /**
- * AI Companion Setup Page.
+ * AI Companion Setup Panel.
  * 
- * WHY: Enables users to configure their preferred AI Persona
- * ('warm_f', 'rational_t', 'dog_c') and daily push notification hour
- * before provisioning a database chat session record.
+ * WHY: Enables authenticated users to configure their chosen AI Persona
+ * and daily notification preferences before starting a secure PostgreSQL
+ * chat session record linked to their account.
  */
 export default function SetupPage() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [selectedPersona, setSelectedPersona] = useState<'warm_f' | 'rational_t' | 'dog_c'>('warm_f');
   const [notificationTime, setNotificationTime] = useState('22:00');
   const [isCreatingSession, setIsCreatingSession] = useState(false);
-  const [isMock, setIsMock] = useState(false);
 
   useEffect(() => {
+    // Proactively verify the active Supabase authentication session
     async function loadUser() {
-      // 1. Try to load active real Supabase session first
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          // Real session is active. Proactively clean lingering mock tokens to prevent confusion.
-          localStorage.removeItem('haru_talk_mock_auth');
           setUserProfile({
             id: session.user.id,
             name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || '하루톡 친구',
             avatar_url: session.user.user_metadata?.avatar_url,
           });
-          setIsMock(false);
-          logger.info('Active Supabase user session loaded for setup.');
-          return;
+          logger.info('Active Supabase user session loaded successfully.');
+        } else {
+          logger.warn('No active login session detected. Redirecting securely to landing page.');
+          window.location.href = '/';
         }
       } catch (err) {
-        logger.error('Failed to retrieve real user session on setup', err);
+        logger.error('Failed to load authenticated user session during setup initialization', err);
+        window.location.href = '/';
       }
-
-      // 2. Fallback to simulated local mock credentials if present
-      const mockAuth = localStorage.getItem('haru_talk_mock_auth');
-      if (mockAuth) {
-        const parsed = JSON.parse(mockAuth);
-        setUserProfile({
-          id: parsed.id,
-          name: parsed.name,
-          avatar_url: parsed.avatar_url,
-        });
-        setIsMock(true);
-        logger.info('Mock session loaded for setup page.');
-        return;
-      }
-
-      // 3. No active session of any kind. Redirect to landing.
-      logger.warn('No active session. Redirecting to landing page.');
-      window.location.href = '/';
     }
     loadUser();
   }, []);
 
   /**
-   * provisions a new chat session (Supabase row or Mock storage)
-   * and routes the client directly into the conversation environment.
+   * Provisions a brand new chat session record directly in Supabase PostgreSQL.
+   * 
+   * WHY: Triggers an authenticated PostgreSQL insert to start a secure conversation thread,
+   * obeying Row Level Security (RLS) policies.
    */
   const handleStartChat = async () => {
+    if (!userProfile) return;
     setIsCreatingSession(true);
     
     // Save chosen settings to profile preferences local cache
     localStorage.setItem('haru_talk_persona', selectedPersona);
     localStorage.setItem('haru_talk_notif_time', notificationTime);
 
-    if (isMock) {
-      // Generate a mock uuid and mock session record
-      const mockSessionId = `mock-session-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const mockSession = {
-        id: mockSessionId,
-        user_id: userProfile?.id || 'mock-user',
-        persona: selectedPersona,
-        status: 'chatting',
-        created_at: new Date().toISOString(),
-      };
-      
-      const existingSessions = JSON.parse(localStorage.getItem('haru_talk_mock_sessions') || '[]');
-      existingSessions.push(mockSession);
-      localStorage.setItem('haru_talk_mock_sessions', JSON.stringify(existingSessions));
-      
-      // Initialize an empty messages array for this session
-      localStorage.setItem(`haru_talk_mock_msgs_${mockSessionId}`, JSON.stringify([]));
-
-      logger.info(`Provisioned simulated session=${mockSessionId}`);
-      window.location.href = `/chat/${mockSessionId}`;
-      return;
-    }
-
     try {
-      // Real Supabase insert
+      // Real Supabase PostgreSQL session insert
       const { data: sessionData, error } = await supabase
         .from('chat_sessions')
         .insert({
-          user_id: userProfile?.id,
+          user_id: userProfile.id,
           persona: selectedPersona,
           status: 'chatting',
         })
@@ -119,24 +80,28 @@ export default function SetupPage() {
       logger.info(`Provisioned active Supabase session=${sessionData.id}`);
       window.location.href = `/chat/${sessionData.id}`;
     } catch (err) {
-      logger.error('Failed to create new chat session in Supabase', err);
+      logger.error('Failed to create new chat session in Supabase PostgreSQL', err);
       setIsCreatingSession(false);
       alert('세션 생성 도중 에러가 발생했습니다. Supabase 테이블 생성 및 RLS 정책을 점검해 주세요.');
     }
   };
 
   /**
-   * Destroys active credentials cache and logs user out.
+   * Destroys active session JWT tokens and signs the user out of the platform.
+   * 
+   * WHY: Revokes authenticated access securely and returns the client to the landing gate.
    */
   const handleSignOut = async () => {
-    localStorage.removeItem('haru_talk_mock_auth');
-    if (!isMock) {
+    try {
       await supabase.auth.signOut();
+      window.location.href = '/';
+    } catch (err) {
+      logger.error('Failed to execute sign out transaction', err);
+      window.location.href = '/';
     }
-    window.location.href = '/';
   };
 
-  // Profile icon fallback generator
+  // Profile icon fallback initials generator
   const getInitial = (name: string) => name.charAt(0) || 'U';
 
   return (
@@ -167,7 +132,7 @@ export default function SetupPage() {
 
         <button
           onClick={handleSignOut}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-red-950/20 hover:text-red-300 text-slate-400 border border-slate-800 text-xs font-semibold transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-red-950/20 hover:text-red-300 text-slate-400 border border-slate-800 text-xs font-semibold transition-all cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" />
           <span>로그아웃</span>
@@ -295,17 +260,11 @@ export default function SetupPage() {
           id="setup-start-btn"
           onClick={handleStartChat}
           disabled={isCreatingSession}
-          className="w-full h-13 rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-bold text-sm shadow-[0_4px_25px_rgba(167,139,250,0.25)] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50"
+          className="w-full h-13 rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-bold text-sm shadow-[0_4px_25px_rgba(167,139,250,0.25)] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
         >
           {isCreatingSession ? '대화 세션 구성 중...' : '밤의 대화방으로 들어가기'}
           {!isCreatingSession && <ArrowRight className="w-4 h-4" />}
         </button>
-
-        {isMock && (
-          <p className="text-center text-[10px] text-purple-300/60 font-semibold mt-3">
-            * 현재 로컬 체험(시뮬레이터) 모드로 동작 중입니다. 모든 대화 정보는 로컬스토리지에 저장됩니다.
-          </p>
-        )}
       </section>
     </main>
   );
