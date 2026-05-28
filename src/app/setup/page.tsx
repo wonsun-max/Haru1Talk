@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Heart, Brain, Bone, Bell, ArrowRight, LogOut } from 'lucide-react';
+import { Sparkles, Heart, Brain, Bone, Bell, ArrowRight, LogOut, Clock, User, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
@@ -142,12 +142,12 @@ export default function SetupPage() {
 
   return (
     <main className="flex-1 flex flex-col items-center px-4 py-8 relative overflow-hidden">
-      {/* Background Ambience */}
-      <div className="absolute top-10 left-10 w-[200px] h-[200px] bg-purple-500/5 rounded-full blur-[80px] pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-[200px] h-[200px] bg-indigo-500/5 rounded-full blur-[80px] pointer-events-none" />
+      {/* Background Ambient Orbs (Google Antigravity Premium) */}
+      <div className="absolute top-[-10%] left-[-20%] w-[500px] h-[500px] bg-gradient-to-tr from-purple-600/10 to-indigo-800/10 rounded-full blur-[120px] pointer-events-none animate-pulse duration-[8000ms]" />
+      <div className="absolute bottom-[-10%] right-[-20%] w-[500px] h-[500px] bg-gradient-to-br from-indigo-600/10 to-blue-800/10 rounded-full blur-[120px] pointer-events-none animate-pulse duration-[10000ms]" />
 
       {/* Navigation Header */}
-      <header className="w-full max-w-lg flex justify-between items-center z-10 mb-8">
+      <header className="w-full max-w-lg flex justify-between items-center z-10 mb-8 pb-4 border-b border-white/5">
         <div className="flex items-center gap-3">
           {userProfile?.avatar_url ? (
             <img
@@ -188,46 +188,58 @@ export default function SetupPage() {
         </div>
 
         {/* NICKNAME EDIT FIELD */}
-        <div className="glass-panel rounded-2xl p-5 mb-8">
-          <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-            나의 닉네임 설정
+        <div className="glass-panel rounded-2xl p-5 mb-6 transition-all duration-300 hover:border-purple-500/20">
+          <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+            <User className="w-3.5 h-3.5 text-purple-300" />
+            <span>나의 닉네임 설정</span>
           </label>
           <p className="text-[10px] text-slate-400 mb-3">AI 친구가 대화 중 당신을 친근하게 불러줄 이름입니다.</p>
-          <input
-            id="nickname-input"
-            type="text"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            placeholder="호칭을 입력해 주세요 (예: 원선, 쏭이)"
-            className="w-full h-11 rounded-xl px-4 text-xs glass-input font-medium"
-            maxLength={15}
-          />
+          <div className="relative">
+            <input
+              id="nickname-input"
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="호칭을 입력해 주세요 (예: 원선, 쏭이)"
+              className="w-full h-11 rounded-xl pl-4 pr-12 text-xs glass-input font-medium border border-white/10 bg-slate-950/20 focus:border-purple-400/50 focus:ring-1 focus:ring-purple-400/50 transition-all duration-300"
+              maxLength={15}
+            />
+            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-slate-500">
+              {nickname.length}/15
+            </span>
+          </div>
         </div>
 
         {/* Persona Select Grid */}
-        <div className="flex flex-col gap-4 mb-8">
+        <div className="flex flex-col gap-4 mb-6">
           
           {/* Option 1: Warm F */}
           <motion.div
             onClick={() => setSelectedPersona('warm_f')}
-            whileHover={{ scale: 1.01 }}
+            whileHover={{ scale: 1.01, y: -2 }}
             className={`cursor-pointer rounded-2xl p-5 border transition-all duration-300 flex gap-4 ${
               selectedPersona === 'warm_f'
-                ? 'glass-panel border-purple-400/50 shadow-[0_8px_32px_rgba(167,139,250,0.15)] bg-purple-950/10'
-                : 'bg-slate-900/30 border-slate-800/60 hover:border-slate-700/60'
+                ? 'glass-panel border-purple-500/60 shadow-[0_8px_32px_rgba(167,139,250,0.15)] bg-purple-950/20'
+                : 'glass-panel bg-slate-950/10 border-white/5 hover:border-slate-700/60 hover:bg-slate-900/10'
             }`}
           >
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-              selectedPersona === 'warm_f' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-800 text-slate-500'
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-300 ${
+              selectedPersona === 'warm_f'
+                ? 'bg-purple-500/20 text-purple-300 shadow-[0_0_15px_rgba(167,139,250,0.2)]'
+                : 'bg-slate-900/60 border border-white/5 text-slate-400'
             }`}>
-              <Heart className="w-6 h-6" />
+              <Heart className="w-5.5 h-5.5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white">따뜻한 위로 F 프렌드</h3>
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-400/10 text-purple-300 font-semibold border border-purple-400/20">공감형</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${
+                  selectedPersona === 'warm_f'
+                    ? 'bg-purple-400/10 text-purple-300 border-purple-400/20'
+                    : 'bg-slate-800/40 text-slate-400 border-slate-700/40'
+                }`}>공감형</span>
               </div>
-              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+              <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
                 당신의 감정에 깊이 공감하고 위로와 격려를 아끼지 않는 친구예요. 지치고 속상하거나 위로받고 싶을 때 가장 완벽한 짝이 되어 줍니다.
               </p>
             </div>
@@ -236,24 +248,30 @@ export default function SetupPage() {
           {/* Option 2: Rational T */}
           <motion.div
             onClick={() => setSelectedPersona('rational_t')}
-            whileHover={{ scale: 1.01 }}
+            whileHover={{ scale: 1.01, y: -2 }}
             className={`cursor-pointer rounded-2xl p-5 border transition-all duration-300 flex gap-4 ${
               selectedPersona === 'rational_t'
-                ? 'glass-panel border-blue-400/50 shadow-[0_8px_32px_rgba(56,189,248,0.15)] bg-blue-950/10'
-                : 'bg-slate-900/30 border-slate-800/60 hover:border-slate-700/60'
+                ? 'glass-panel border-blue-500/60 shadow-[0_8px_32px_rgba(56,189,248,0.15)] bg-blue-950/20'
+                : 'glass-panel bg-slate-950/10 border-white/5 hover:border-slate-700/60 hover:bg-slate-900/10'
             }`}
           >
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-              selectedPersona === 'rational_t' ? 'bg-blue-500/20 text-blue-300' : 'bg-slate-800 text-slate-500'
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-300 ${
+              selectedPersona === 'rational_t'
+                ? 'bg-blue-500/20 text-blue-300 shadow-[0_0_15px_rgba(56,189,248,0.2)]'
+                : 'bg-slate-900/60 border border-white/5 text-slate-400'
             }`}>
-              <Brain className="w-6 h-6" />
+              <Brain className="w-5.5 h-5.5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white">명쾌한 조언 T 프렌드</h3>
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-400/10 text-blue-300 font-semibold border border-blue-400/20">이성형</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${
+                  selectedPersona === 'rational_t'
+                    ? 'bg-blue-400/10 text-blue-300 border-blue-400/20'
+                    : 'bg-slate-800/40 text-slate-400 border-slate-700/40'
+                }`}>이성형</span>
               </div>
-              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+              <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
                 오늘 있었던 상황을 논리적으로 정리하고 생산적인 피드백이나 새로운 생각을 자극하는 명쾌한 솔루션을 제시하는 조언가 친구예요.
               </p>
             </div>
@@ -262,24 +280,30 @@ export default function SetupPage() {
           {/* Option 3: Energetic Dog */}
           <motion.div
             onClick={() => setSelectedPersona('dog_c')}
-            whileHover={{ scale: 1.01 }}
+            whileHover={{ scale: 1.01, y: -2 }}
             className={`cursor-pointer rounded-2xl p-5 border transition-all duration-300 flex gap-4 ${
               selectedPersona === 'dog_c'
-                ? 'glass-panel border-rose-400/50 shadow-[0_8px_32px_rgba(253,164,185,0.15)] bg-rose-950/10'
-                : 'bg-slate-900/30 border-slate-800/60 hover:border-slate-700/60'
+                ? 'glass-panel border-rose-500/60 shadow-[0_8px_32px_rgba(253,164,185,0.15)] bg-rose-950/20'
+                : 'glass-panel bg-slate-950/10 border-white/5 hover:border-slate-700/60 hover:bg-slate-900/10'
             }`}
           >
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-              selectedPersona === 'dog_c' ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-500'
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-300 ${
+              selectedPersona === 'dog_c'
+                ? 'bg-rose-500/20 text-rose-300 shadow-[0_0_15px_rgba(253,164,185,0.2)]'
+                : 'bg-slate-900/60 border border-white/5 text-slate-400'
             }`}>
-              <Bone className="w-6 h-6" />
+              <Bone className="w-5.5 h-5.5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white">경청하는 멍멍이</h3>
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-400/10 text-rose-300 font-semibold border border-rose-400/20">반려견</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${
+                  selectedPersona === 'dog_c'
+                    ? 'bg-rose-400/10 text-rose-300 border-rose-400/20'
+                    : 'bg-slate-800/40 text-slate-400 border-slate-700/40'
+                }`}>반려견</span>
               </div>
-              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+              <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
                 "멍! 왈!" 리액션과 함께 당신의 사소한 행동 하나도 꼬리를 흔들며 신나게 칭찬하는 귀여운 반려견 친구예요. 무거운 하루를 귀여움으로 정화해 줍니다.
               </p>
             </div>
@@ -287,9 +311,9 @@ export default function SetupPage() {
         </div>
 
         {/* Daily Alarm Notification card */}
-        <div className="glass-panel rounded-2xl p-5 mb-6 flex items-center justify-between">
+        <div className="glass-panel rounded-2xl p-5 mb-6 flex items-center justify-between transition-all duration-300 hover:border-purple-500/20">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-center text-purple-300 shrink-0">
               <Bell className="w-5 h-5" />
             </div>
             <div>
@@ -298,35 +322,40 @@ export default function SetupPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-950/60 border border-slate-800 px-3 py-1.5 rounded-xl">
+          <div className="flex items-center gap-2 bg-slate-950/60 border border-white/10 px-3 py-1.5 rounded-xl transition-all hover:border-purple-400/40 focus-within:border-purple-400/50">
+            <Clock className="w-3.5 h-3.5 text-purple-300" />
             <input
               type="time"
               value={notificationTime}
               onChange={(e) => setNotificationTime(e.target.value)}
-              className="bg-transparent text-white font-bold text-xs outline-none cursor-pointer"
+              className="bg-transparent text-white font-bold text-xs outline-none cursor-pointer [color-scheme:dark]"
             />
           </div>
         </div>
 
-        {/* Privacy Consent Checkbox Card */}
-        <div className="glass-panel rounded-2xl p-5 mb-8">
-          <div className="flex items-start gap-3">
-            <input
-              id="privacy-consent-checkbox"
-              type="checkbox"
-              checked={privacyConsented}
-              onChange={(e) => setPrivacyConsented(e.target.checked)}
-              className="w-4 h-4 mt-0.5 accent-purple-500 rounded border-slate-800 bg-slate-900 cursor-pointer"
-            />
+        {/* Privacy Consent Checkbox Card (Custom Checkbox) */}
+        <div className="glass-panel rounded-2xl p-5 mb-8 transition-all duration-300 hover:border-purple-500/20">
+          <button
+            type="button"
+            onClick={() => setPrivacyConsented(!privacyConsented)}
+            className="flex items-start gap-3 text-left w-full cursor-pointer focus:outline-none"
+          >
+            <div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 border transition-all duration-300 mt-0.5 ${
+              privacyConsented
+                ? 'bg-gradient-to-r from-purple-500 to-indigo-500 border-purple-400 text-white shadow-[0_0_10px_rgba(167,139,250,0.3)]'
+                : 'border-white/10 bg-slate-950/40 hover:border-white/20'
+            }`}>
+              {privacyConsented && <Check className="w-3.5 h-3.5 stroke-[3px]" />}
+            </div>
             <div className="flex-1 select-none">
-              <label htmlFor="privacy-consent-checkbox" className="text-xs font-bold text-white cursor-pointer">
+              <span className="text-xs font-bold text-white block">
                 개인정보 수집 및 음성 데이터 이용약관 동의 (필수)
-              </label>
+              </span>
               <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
                 하루톡은 AI 대화 피드백 제공, 실시간 음성 통화(STT/TTS) 연동, 그리고 밤의 일기장 생성을 목적으로 텍스트 및 음성 데이터를 수집하며, 이 데이터는 OpenAI 등 제3자 AI 모델 학습에 사용되지 않고 안전하게 암호화 보증 처리됩니다.
               </p>
             </div>
-          </div>
+          </button>
         </div>
 
         {/* Submit Action Button */}
@@ -334,7 +363,7 @@ export default function SetupPage() {
           id="setup-start-btn"
           onClick={handleStartChat}
           disabled={isCreatingSession || isProfileUpdating}
-          className="w-full h-13 rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-bold text-sm shadow-[0_4px_25px_rgba(167,139,250,0.25)] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
+          className="w-full h-13 rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-bold text-sm shadow-[0_4px_25px_rgba(167,139,250,0.25)] hover:shadow-[0_8px_30px_rgba(167,139,250,0.4)] flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-300 disabled:opacity-50 cursor-pointer"
         >
           {isCreatingSession ? (isProfileUpdating ? '프로필 동기화 중...' : '대화 세션 구성 중...') : '밤의 대화방으로 들어가기'}
           {!isCreatingSession && <ArrowRight className="w-4 h-4" />}

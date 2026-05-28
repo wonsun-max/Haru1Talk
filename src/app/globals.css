@@ -13,6 +13,9 @@
 
 body {
   background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #030712 60%, #020617 100%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
   color: var(--foreground);
   min-height: 100vh;
   min-height: 100dvh; /* Mobile layout split protection */
