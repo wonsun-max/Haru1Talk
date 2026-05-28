@@ -744,46 +744,54 @@ export default function ChatPage() {
                   key={msg.id || index}
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4 }}
+                  transition={{ duration: 0.4, ease: 'easeOut' }}
                   className={`flex gap-3 items-end ${isAi ? 'justify-start' : 'justify-end'}`}
                 >
                   {/* AI Avatar */}
                   {isAi && (
-                    <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center font-bold text-xs ${
-                      persona === 'warm_f' ? 'bg-purple-950/40 text-purple-300 border border-purple-800/30' :
-                      persona === 'rational_t' ? 'bg-blue-950/40 text-blue-300 border border-blue-800/30' :
-                      'bg-rose-950/40 text-rose-300 border border-rose-800/30'
+                    <div className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-sm shadow-md transition-all duration-300 border ${
+                      persona === 'warm_f' ? 'bg-gradient-to-tr from-purple-500/20 to-indigo-600/20 border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.15)]' :
+                      persona === 'rational_t' ? 'bg-gradient-to-tr from-blue-500/20 to-cyan-600/20 border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.15)]' :
+                      'bg-gradient-to-tr from-rose-500/20 to-orange-500/20 border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.15)]'
                     }`}>
-                      {persona === 'warm_f' ? 'F' : persona === 'rational_t' ? 'T' : '🐾'}
+                      {persona === 'warm_f' ? '🌸' : persona === 'rational_t' ? '⚡' : '🐶'}
                     </div>
                   )}
 
                   {/* Message Bubble wrapper */}
-                  <div className={`flex flex-col max-w-[70%] gap-1.5 ${isAi ? 'items-start' : 'items-end'}`}>
+                  <div className={`flex flex-col max-w-[70%] gap-2 ${isAi ? 'items-start' : 'items-end'}`}>
                     
                     {/* Bubble body card */}
-                    <div className={`rounded-2xl p-4 text-xs font-medium leading-relaxed ${
-                      isAi
-                        ? 'bg-slate-900/60 border border-slate-800/80 text-white rounded-tl-sm'
-                        : 'bg-purple-600/90 text-white rounded-tr-sm shadow-[0_4px_15px_rgba(147,51,234,0.15)]'
-                    }`}>
-                      {msg.content.split('\n').map((line, lIdx) => (
-                        <p key={lIdx} className={lIdx > 0 ? 'mt-1.5' : ''}>{line}</p>
-                      ))}
-                    </div>
+                    {isAi ? (
+                      <div className={`glass-panel-heavy rounded-2xl px-5 py-3.5 text-xs font-medium leading-relaxed shadow-xl border-l-4 rounded-tl-none ${
+                        persona === 'warm_f' ? 'border-l-purple-500/60 border-t-white/5 border-r-white/5 border-b-white/5 bg-slate-950/40 text-purple-50 shadow-[0_8px_32px_rgba(167,139,250,0.05)]' :
+                        persona === 'rational_t' ? 'border-l-blue-500/60 border-t-white/5 border-r-white/5 border-b-white/5 bg-slate-950/40 text-blue-50 shadow-[0_8px_32px_rgba(56,189,248,0.05)]' :
+                        'border-l-rose-500/60 border-t-white/5 border-r-white/5 border-b-white/5 bg-slate-950/40 text-rose-50 shadow-[0_8px_32px_rgba(244,63,94,0.05)]'
+                      }`}>
+                        {msg.content.split('\n').map((line, lIdx) => (
+                          <p key={lIdx} className={lIdx > 0 ? 'mt-1.5' : ''}>{line}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="bg-gradient-to-br from-purple-500 via-indigo-500 to-indigo-600 text-white rounded-2xl rounded-tr-none px-5 py-3.5 text-xs font-semibold leading-relaxed shadow-[0_8px_30px_rgba(167,139,250,0.2)] border border-purple-400/20">
+                        {msg.content.split('\n').map((line, lIdx) => (
+                          <p key={lIdx} className={lIdx > 0 ? 'mt-1.5' : ''}>{line}</p>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Bubble Sub-action: Play Voice (TTS) only for AI messages */}
                     {isAi && (
                       <button
                         id={`tts-play-${msg.id}`}
                         onClick={() => triggerTextToSpeech(msg.id, msg.content)}
-                        className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg border transition-all cursor-pointer ${
+                        className={`flex items-center gap-1.5 text-[9px] font-bold px-3 py-1.5 rounded-full border transition-all duration-300 cursor-pointer shadow-sm active:scale-[0.98] ${
                           isTtsPlaying === msg.id
-                            ? 'text-purple-300 border-purple-500/30 bg-purple-500/10'
-                            : 'text-slate-400 border-slate-800 hover:text-white'
+                            ? 'text-purple-200 border-purple-500/40 bg-purple-500/20 shadow-[0_0_10px_rgba(167,139,250,0.2)]'
+                            : 'text-slate-400 border-white/5 bg-slate-950/40 hover:text-white hover:border-purple-500/20'
                         }`}
                       >
-                        <Volume2 className={`w-3 h-3 ${isTtsPlaying === msg.id ? 'animate-pulse' : ''}`} />
+                        <Volume2 className={`w-3.5 h-3.5 ${isTtsPlaying === msg.id ? 'animate-pulse text-purple-300' : ''}`} />
                         <span>{isTtsPlaying === msg.id ? '말하는 중...' : '음성 듣기'}</span>
                       </button>
                     )}
@@ -796,13 +804,13 @@ export default function ChatPage() {
           {/* AI Typing Indicator */}
           {isAiTyping && (
             <div className="flex gap-3 items-center justify-start">
-              <div className="w-8 h-8 rounded-xl bg-slate-900/50 border border-slate-800/30 flex items-center justify-center font-bold text-xs text-slate-400">
-                ••
+              <div className={`w-9 h-9 rounded-full bg-slate-900/50 border border-white/5 flex items-center justify-center text-sm shadow-[0_0_8px_rgba(0,0,0,0.2)]`}>
+                {persona === 'warm_f' ? '🌸' : persona === 'rational_t' ? '⚡' : '🐶'}
               </div>
-              <div className="rounded-2xl p-3 bg-slate-900/40 border border-slate-900 text-slate-300 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" />
-                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.2s' }} />
-                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.4s' }} />
+              <div className="glass-panel-heavy rounded-2xl px-4 py-3 border border-white/5 text-slate-300 flex items-center gap-1 rounded-tl-none shadow-lg">
+                <span className="w-1.5 h-1.5 bg-purple-400 rounded-full loading-dot animate-bounce" />
+                <span className="w-1.5 h-1.5 bg-purple-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.2s' }} />
+                <span className="w-1.5 h-1.5 bg-purple-400 rounded-full loading-dot animate-bounce" style={{ animationDelay: '0.4s' }} />
               </div>
             </div>
           )}
@@ -813,7 +821,7 @@ export default function ChatPage() {
 
       {/* CLASSIC CHAT FOOTER CONTROLLER */}
       {!isLiveCallMode && (
-        <footer className="glass-panel w-full p-4 z-10 flex flex-col gap-3 pb-8">
+        <footer className="glass-panel w-full p-4 z-10 flex flex-col gap-3 pb-8 border-t border-white/5 shadow-[0_-8px_32px_rgba(0,0,0,0.4)]">
           
           {/* VOICE RECORDING OVERLAY RIPPLE INDICATOR */}
           <AnimatePresence>
@@ -857,32 +865,34 @@ export default function ChatPage() {
                 id="voice-start-btn"
                 onClick={startAudioRecording}
                 disabled={isAiTyping}
-                className="w-11 h-11 rounded-xl bg-slate-900/80 hover:bg-purple-950/20 hover:text-purple-300 border border-slate-800 text-slate-400 flex items-center justify-center transition-all shrink-0 active:scale-[0.95] disabled:opacity-50 cursor-pointer"
+                className="w-11 h-11 rounded-xl bg-slate-900/60 hover:bg-purple-950/20 hover:text-purple-300 border border-white/5 text-slate-400 flex items-center justify-center transition-all shrink-0 active:scale-[0.95] disabled:opacity-50 cursor-pointer shadow-md"
               >
-                <Mic className="w-5 h-5" />
+                <Mic className="w-5 h-5 text-purple-300" />
               </button>
             )}
 
-            {/* Text Input */}
-            <input
-              id="chat-input"
-              type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSendMessage();
-              }}
-              placeholder={isAiTyping ? 'AI가 답변을 생각하는 중입니다...' : '친구와 대화하듯 편하게 적어주세요...'}
-              disabled={isAiTyping || isRecording}
-              className="flex-1 h-11 rounded-xl px-4 text-xs glass-input font-medium disabled:opacity-50"
-            />
+            {/* Premium Integrated Text Input Box */}
+            <div className="flex-1 h-11 rounded-xl px-4 flex items-center border border-white/10 bg-slate-950/40 focus-within:border-purple-400/50 focus-within:ring-1 focus-within:ring-purple-400/50 transition-all duration-300 shadow-inner">
+              <input
+                id="chat-input"
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSendMessage();
+                }}
+                placeholder={isAiTyping ? 'AI가 답변을 생각하고 있습니다...' : '친구와 나누듯 고요하고 다정하게 대화해봐요...'}
+                disabled={isAiTyping || isRecording}
+                className="flex-1 bg-transparent border-none text-white text-xs font-semibold placeholder-slate-500 outline-none focus:ring-0 disabled:opacity-50"
+              />
+            </div>
 
             {/* Send text button */}
             <button
               id="chat-send-btn"
               onClick={() => handleSendMessage()}
               disabled={isAiTyping || isRecording || !inputText.trim()}
-              className="w-11 h-11 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-slate-900/60 text-white flex items-center justify-center transition-all shrink-0 active:scale-[0.95] shadow-[0_4px_15px_rgba(147,51,234,0.2)] disabled:shadow-none disabled:opacity-50 cursor-pointer"
+              className="w-11 h-11 rounded-xl bg-gradient-to-r from-purple-500 via-indigo-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 disabled:from-slate-900/60 disabled:to-slate-900/60 disabled:bg-none text-white flex items-center justify-center transition-all shrink-0 active:scale-[0.95] shadow-[0_4px_15px_rgba(147,51,234,0.25)] hover:shadow-[0_4px_20px_rgba(147,51,234,0.4)] disabled:shadow-none disabled:opacity-50 cursor-pointer"
             >
               <Send className="w-4 h-4 fill-current" />
             </button>
