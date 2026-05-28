@@ -180,7 +180,12 @@ export async function GET(request: NextRequest) {
     for (const user of targetUsers) {
       const meta = user.user_metadata;
       const provider = meta?.oauth_provider || 'email';
-      const nickname = meta?.full_name || meta?.name || '하루톡 친구';
+      const nickname = meta?.full_name || 
+                       meta?.name || 
+                       meta?.nickname || 
+                       meta?.kakao_account?.profile?.nickname || 
+                       user.email?.split('@')[0] || 
+                       '하루톡 친구';
       const emailAddress = user.email;
 
       let notified = false;

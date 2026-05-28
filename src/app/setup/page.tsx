@@ -39,11 +39,24 @@ export default function SetupPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          const defaultName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '하루톡 친구';
+          const meta = session.user.user_metadata;
+          const defaultName = meta?.full_name || 
+                              meta?.name || 
+                              meta?.nickname || 
+                              meta?.kakao_account?.profile?.nickname || 
+                              session.user.email?.split('@')[0] || 
+                              '하루톡 친구';
+                              
+          const avatarUrl = meta?.avatar_url || 
+                            meta?.picture || 
+                            meta?.profile_image || 
+                            meta?.kakao_account?.profile?.profile_image_url || 
+                            meta?.kakao_account?.profile?.thumbnail_image_url;
+
           setUserProfile({
             id: session.user.id,
             name: defaultName,
-            avatar_url: session.user.user_metadata?.avatar_url,
+            avatar_url: avatarUrl || undefined,
           });
           setNickname(defaultName);
 

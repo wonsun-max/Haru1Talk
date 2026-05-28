@@ -87,7 +87,13 @@ export async function POST(request: NextRequest) {
     // 6. Formulate AI System Prompt depending on Persona
     let systemPrompt = '';
     const selectedPersona = persona || 'warm_f';
-    const userNickname = user.user_metadata?.full_name || user.user_metadata?.name || '하루톡 친구';
+    const meta = user.user_metadata;
+    const userNickname = meta?.full_name || 
+                         meta?.name || 
+                         meta?.nickname || 
+                         meta?.kakao_account?.profile?.nickname || 
+                         user.email?.split('@')[0] || 
+                         '하루톡 친구';
 
     switch (selectedPersona) {
       case 'rational_t':
