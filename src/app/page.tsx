@@ -232,6 +232,7 @@ export default function LandingPage() {
         provider,
         options: {
           redirectTo: `${window.location.origin}/dashboard`,
+          scopes: provider === 'kakao' ? 'talk_message' : undefined,
         },
       });
       if (error) throw error;

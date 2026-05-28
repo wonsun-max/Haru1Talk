@@ -23,6 +23,7 @@ export default function SetupPage() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [selectedPersona, setSelectedPersona] = useState<'warm_f' | 'rational_t' | 'dog_c'>('warm_f');
   const [notificationTime, setNotificationTime] = useState('22:00');
+  const [notificationEnabled, setNotificationEnabled] = useState(true);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
 
   // Privacy Consent & Nickname states
@@ -43,6 +44,14 @@ export default function SetupPage() {
             avatar_url: session.user.user_metadata?.avatar_url,
           });
           setNickname(defaultName);
+
+          // Populate existing saved alarm configurations
+          if (session.user.user_metadata?.notification_time) {
+            setNotificationTime(session.user.user_metadata.notification_time);
+          }
+          if (session.user.user_metadata?.notification_enabled !== undefined) {
+            setNotificationEnabled(session.user.user_metadata.notification_enabled);
+          }
           logger.info('Active Supabase user session loaded successfully.');
         } else {
           logger.warn('No active login session detected. Redirecting securely to landing page.');
@@ -80,11 +89,20 @@ export default function SetupPage() {
     setIsProfileUpdating(true);
 
     try {
-      // 1. Sync custom nickname to Supabase Auth metadata securely
+      // 1. Fetch active Supabase session to secure oauth tokens
+      const { data: { session } } = await supabase.auth.getSession();
+      const provider = session?.user?.app_metadata?.provider || 'email';
+      const providerToken = session?.provider_token || null;
+
+      // 2. Sync custom nickname and alarm preferences to Supabase Auth metadata securely
       const { error: profileError } = await supabase.auth.updateUser({
         data: {
           full_name: trimmedNickname,
           name: trimmedNickname,
+          notification_time: notificationTime,
+          notification_enabled: notificationEnabled,
+          oauth_provider: provider,
+          kakao_access_token: providerToken,
         }
       });
       
@@ -313,20 +331,42 @@ export default function SetupPage() {
         {/* Daily Alarm Notification card */}
         <div className="glass-panel rounded-2xl p-5 mb-6 flex items-center justify-between transition-all duration-300 hover:border-purple-500/20">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-center text-purple-300 shrink-0">
-              <Bell className="w-5 h-5" />
-            </div>
+            <button
+              type="button"
+              onClick={() => setNotificationEnabled(!notificationEnabled)}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all duration-300 ${
+                notificationEnabled
+                  ? 'bg-purple-500/20 border-purple-400/30 text-purple-300 shadow-[0_0_10px_rgba(167,139,250,0.15)]'
+                  : 'bg-slate-900/60 border border-white/5 text-slate-500'
+              }`}
+            >
+              <Bell className={`w-5 h-5 ${notificationEnabled ? 'animate-bounce' : ''}`} />
+            </button>
             <div>
-              <h3 className="text-xs font-bold text-white">오늘의 회고 푸시 알림</h3>
+              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>오늘의 회고 푸시 알림</span>
+                <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-bold border transition-all ${
+                  notificationEnabled
+                    ? 'bg-purple-400/10 text-purple-300 border-purple-400/20'
+                    : 'bg-slate-800/40 text-slate-500 border-slate-700/40'
+                }`}>
+                  {notificationEnabled ? '활성화' : '비활성화'}
+                </span>
+              </h3>
               <p className="text-[10px] text-slate-400 mt-0.5">매일 밤 설정한 시각에 회고용 대화 알림을 보내드려요.</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-950/60 border border-white/10 px-3 py-1.5 rounded-xl transition-all hover:border-purple-400/40 focus-within:border-purple-400/50">
+          <div className={`flex items-center gap-2 bg-slate-950/60 border px-3 py-1.5 rounded-xl transition-all duration-300 ${
+            notificationEnabled
+              ? 'border-white/10 opacity-100 hover:border-purple-400/40 focus-within:border-purple-400/50'
+              : 'border-white/5 opacity-40 pointer-events-none'
+          }`}>
             <Clock className="w-3.5 h-3.5 text-purple-300" />
             <input
               type="time"
               value={notificationTime}
+              disabled={!notificationEnabled}
               onChange={(e) => setNotificationTime(e.target.value)}
               className="bg-transparent text-white font-bold text-xs outline-none cursor-pointer [color-scheme:dark]"
             />
