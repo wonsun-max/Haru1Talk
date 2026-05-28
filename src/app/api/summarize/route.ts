@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { supabaseAdmin } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { logger } from '@/lib/logger';
 
 const openai = new OpenAI({
@@ -57,6 +57,19 @@ export async function POST(request: NextRequest) {
     }
 
     if (sessionData.status === 'completed') {
+      // WHY: Self-healing — if a diary was already created (e.g. from double submission or retried network call),
+      // return the existing diary record instead of rejecting with an error.
+      const { data: existingDiary, error: fetchError } = await supabaseAdmin
+        .from('diaries')
+        .select('*')
+        .eq('session_id', sessionId)
+        .single();
+
+      if (!fetchError && existingDiary) {
+        logger.info(`Session=${sessionId} is already completed. Returning existing diary (self-healing).`);
+        return NextResponse.json({ diary: existingDiary });
+      }
+
       return NextResponse.json({ error: 'Bad Request: A diary has already been generated for this session.' }, { status: 400 });
     }
 
@@ -132,6 +145,20 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (saveDiaryError) {
+      // WHY: 23505 = PostgreSQL unique_violation. Handles race-condition where two near-simultaneous
+      // requests both pass the 'completed' check, but the second one hits a unique constraint on the insert.
+      // Self-healing: fetch and return the winning insert's record rather than throwing 500.
+      if ((saveDiaryError as { code?: string }).code === '23505') {
+        logger.warn(`Duplicate diary insert (23505) detected for session=${sessionId}. Fetching existing record.`);
+        const { data: existingDiary } = await supabaseAdmin
+          .from('diaries')
+          .select('*')
+          .eq('session_id', sessionId)
+          .single();
+        if (existingDiary) {
+          return NextResponse.json({ diary: existingDiary });
+        }
+      }
       logger.error('Failed to write diary to database', saveDiaryError);
       throw new Error('Database transaction failure writing diary.');
     }
@@ -143,8 +170,9 @@ export async function POST(request: NextRequest) {
       .eq('id', sessionId);
 
     if (updateSessionError) {
-      logger.error('Failed to update chat session status to completed', updateSessionError);
-      // Note: We don't rollback diary here, but in a real system we would use a database transaction.
+      // WHY: Non-fatal. The diary record is already saved. Log the anomaly and continue.
+      // A reconciliation job or next diary fetch will detect the completed status via diary presence.
+      logger.error('Failed to update chat session status to completed — diary saved but session status stale', updateSessionError);
     }
 
     logger.info(`Diary generated successfully for session=${sessionId}`);

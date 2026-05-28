@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -183,26 +183,39 @@ export async function GET(request: NextRequest) {
       const nickname = meta?.full_name || meta?.name || '하루톡 친구';
       const emailAddress = user.email;
 
+      let notified = false;
+
       if (provider === 'kakao') {
         const kakaoAccessToken = meta?.kakao_access_token;
         if (kakaoAccessToken) {
           const success = await dispatchKakaoTalkPush(kakaoAccessToken, nickname);
-          if (success) kakaoSent++;
-        } else {
-          logger.warn(`Missing Kakao access token for user=${user.id}, falling back to Gmail`);
-          if (emailAddress) {
-            const success = await dispatchResendEmail(emailAddress, nickname);
-            if (success) emailSent++;
+          if (success) {
+            kakaoSent++;
+            notified = true;
+          } else {
+            // WHY: Kakao access tokens expire every ~6h. If Kakao dispatch fails for ANY reason
+            // (expired token, network error, permissions revoked), we fall through to Gmail
+            // to guarantee at least one notification channel reaches the user.
+            logger.warn(`Kakao dispatch failed for user=${user.id}. Attempting Gmail fallback.`);
           }
+        } else {
+          logger.warn(`Missing Kakao access token for user=${user.id}, falling back to Gmail.`);
+        }
+
+        // Gmail fallback: run if Kakao token absent OR Kakao dispatch failed
+        if (!notified && emailAddress) {
+          const success = await dispatchResendEmail(emailAddress, nickname);
+          if (success) emailSent++;
         }
       } else {
-        // Default to Google / Gmail notifications
+        // Default to Google / Gmail notifications for all non-Kakao providers
         if (emailAddress) {
           const success = await dispatchResendEmail(emailAddress, nickname);
           if (success) emailSent++;
         }
       }
     }
+
 
     return NextResponse.json({
       success: true,

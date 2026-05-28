@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Mic, Square, Volume2, Sparkles, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -23,6 +23,7 @@ interface Message {
  */
 export default function ChatPage() {
   const { id: sessionId } = useParams() as { id: string };
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [persona, setPersona] = useState<'warm_f' | 'rational_t' | 'dog_c'>('warm_f');
@@ -120,11 +121,11 @@ export default function ChatPage() {
           loadRealHistory();
         } else {
           logger.warn('Unauthenticated access attempt to dialogue room. Redirecting to landing.');
-          window.location.href = '/';
+          router.push('/');
         }
       } catch (err) {
         logger.error('Failed to verify active authentication session on chat startup', err);
-        window.location.href = '/';
+        router.push('/');
       }
     }
     checkAuthSession();
@@ -156,7 +157,7 @@ export default function ChatPage() {
     try {
       const { data: { session: supabaseSession } } = await supabase.auth.getSession();
       if (!supabaseSession?.user) {
-        window.location.href = '/';
+        router.push('/');
         return;
       }
       setToken(supabaseSession.access_token);
@@ -211,19 +212,20 @@ export default function ChatPage() {
         }]);
         setIsAiTyping(false);
       } else {
-        setMessages(dbMessages.map((m: any) => ({
+        interface DbMessage { id: string; sender: 'user' | 'ai'; content: string; created_at: string; }
+        setMessages(dbMessages.map((m: DbMessage) => ({
           id: m.id,
           sender: m.sender,
           content: m.content,
           created_at: m.created_at,
         })));
-        setUserTurnCount(dbMessages.filter((m: any) => m.sender === 'user').length);
+        setUserTurnCount(dbMessages.filter((m: DbMessage) => m.sender === 'user').length);
       }
 
     } catch (err) {
       logger.error('Failed to load chat history from database', err);
       alert('데이터베이스 연결 실패. 다시 로그인해 주세요.');
-      window.location.href = '/';
+      router.push('/');
     }
   };
 
@@ -675,7 +677,7 @@ export default function ChatPage() {
       alert('최소 1회 이상 대화를 전송하셔야 오늘의 일기장을 완성할 수 있습니다! 아래 입력창에 오늘 하루 있었던 소소한 이야기나 속마음을 들려주세요.');
       return;
     }
-    window.location.href = `/diary/${sessionId}`;
+    router.push(`/diary/${sessionId}`);
   };
 
   return (
@@ -687,7 +689,7 @@ export default function ChatPage() {
       <header className="glass-panel w-full px-4 py-3 flex justify-between items-center z-10 select-none">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => window.location.href = '/dashboard'}
+            onClick={() => router.push('/dashboard')}
             className="p-1.5 rounded-lg hover:bg-slate-800/50 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5" />

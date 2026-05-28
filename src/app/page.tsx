@@ -1,12 +1,22 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, Lock, Sparkles, Heart, Brain, Bone, ArrowRight, Mic, Calendar, Activity, Send, CheckCircle, MessageSquare } from 'lucide-react';
+import { ShieldCheck, Lock, Sparkles, Heart, Brain, Bone, ArrowRight, Mic, Calendar, Activity, Send, CheckCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
-// Interface for preview chat simulator history
+// ─── Stable ID counter (module-level, outside component to avoid purity issues) ───
+let _msgIdCounter = 0;
+/** WHY: Date.now() is an impure function disallowed inside React rendering closures (React 19). */
+function nextMsgId(prefix: string): string {
+  _msgIdCounter += 1;
+  return `${prefix}-${_msgIdCounter}`;
+}
+
+// ─── Types ───
 interface SimulatedMessage {
   id: string;
   sender: 'user' | 'assistant';
@@ -14,8 +24,30 @@ interface SimulatedMessage {
   timestamp: string;
 }
 
+interface PreviewCompanionPresets {
+  mistake: string;
+  kitten: string;
+  exhausted: string;
+}
+
+interface PreviewCompanion {
+  id: 'warm_f' | 'rational_t' | 'dog_c';
+  name: string;
+  mbti: string;
+  role: string;
+  description: string;
+  avatar: string;
+  colorClass: string;
+  borderClass: string;
+  textLightClass: string;
+  bgClass: string;
+  glowClass: string;
+  tagline: string;
+  presets: PreviewCompanionPresets;
+}
+
 // Interactive Mock Companions static data
-const PREVIEW_COMPANIONS = [
+const PREVIEW_COMPANIONS: PreviewCompanion[] = [
   {
     id: 'warm_f',
     name: '따뜻한 공감 메이트 (F)',
@@ -77,29 +109,21 @@ const PREVIEW_COMPANIONS = [
 
 // Interactive emotional statement presets
 const PRESET_USER_INPUTS = [
-  {
-    key: 'mistake' as const,
-    text: '😔 오늘 학교/회사에서 너무 큰 실수를 했어...'
-  },
-  {
-    key: 'kitten' as const,
-    text: '😊 길가다가 완전 작고 귀여운 길고양이를 만났어!'
-  },
-  {
-    key: 'exhausted' as const,
-    text: '🥱 아무 의욕도 없고 멘탈이 너무 지치는 밤이야...'
-  }
+  { key: 'mistake' as const, text: '😔 오늘 학교/회사에서 너무 큰 실수를 했어...' },
+  { key: 'kitten' as const, text: '😊 길가다가 완전 작고 귀여운 길고양이를 만났어!' },
+  { key: 'exhausted' as const, text: '🥱 아무 의욕도 없고 멘탈이 너무 지치는 밤이야...' }
 ];
 
 /**
  * Haru Talk Landing and Product Narrative Gateway.
- * 
+ *
  * WHY: Serves as a friendly, premium, and highly engaging onboarding portal.
- * Features background spatial animations, interactive companion toggle cards, 
- * a client-side real-time preview chat simulator to eliminate sign-up friction, 
- * a dynamic feature-tour timeline, and a highly polished secure authentication gateway.
+ * Features background spatial animations, interactive companion toggle cards,
+ * a client-side real-time preview chat simulator to eliminate sign-up friction,
+ * and a highly polished secure authentication gateway.
  */
 export default function LandingPage() {
+  const router = useRouter();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Authentication status & methods
@@ -131,20 +155,20 @@ export default function LandingPage() {
   const activeCompanion = PREVIEW_COMPANIONS.find(c => c.id === selectedCompanionId) || PREVIEW_COMPANIONS[0];
 
   useEffect(() => {
-    // Proactively verify if user session already exists, bypassing landing to setup immediately
+    // Proactively verify if user session already exists → skip landing
     async function checkActiveSession() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          logger.info('Verified session active. Navigating straight to configuration lobby.');
-          window.location.href = '/dashboard';
+          logger.info('Verified session active. Navigating straight to dashboard.');
+          router.push('/dashboard');
         }
       } catch (err) {
         logger.error('Session acquisition failure on landing page initialization', err);
       }
     }
     checkActiveSession();
-  }, []);
+  }, [router]);
 
   // Auto scroll interactive chat view on simulated dialogue flow updates
   useEffect(() => {
@@ -167,9 +191,9 @@ export default function LandingPage() {
 
   /**
    * Handles interactive simulated preview chat.
-   * 
-   * WHY: Runs entirely client-side to demonstrate the personality characteristics
-   * of companions instantly without requiring authentication API latency.
+   *
+   * WHY: Runs entirely client-side to demonstrate companion personality
+   * without requiring authentication API latency.
    */
   const handleSimulateChat = (presetKey: 'mistake' | 'kitten' | 'exhausted') => {
     if (isSimulating) return;
@@ -178,9 +202,8 @@ export default function LandingPage() {
     const now = new Date();
     const timeStr = `${now.getHours() >= 12 ? '오후' : '오전'} ${now.getHours() % 12 || 12}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    // 1. Insert user message bubble
     const userMsg: SimulatedMessage = {
-      id: `user-${Date.now()}`,
+      id: nextMsgId('user'),
       sender: 'user',
       text: userText,
       timestamp: timeStr
@@ -189,30 +212,29 @@ export default function LandingPage() {
     setSimulatedMessages(prev => [...prev, userMsg]);
     setIsSimulating(true);
 
-    // 2. Mock natural AI cognitive reflection latency
+    // Mock natural AI cognitive reflection latency
     setTimeout(() => {
       const assistantReply = activeCompanion.presets[presetKey];
       const replyMsg: SimulatedMessage = {
-        id: `ai-${Date.now()}`,
+        id: nextMsgId('ai'),
         sender: 'assistant',
         text: assistantReply,
         timestamp: timeStr
       };
-
       setSimulatedMessages(prev => [...prev, replyMsg]);
       setIsSimulating(false);
     }, 1200);
   };
 
   /**
-   * Clears the simulated chat logs to let the user choose a new workflow.
+   * Clears the simulated chat logs and resets the companion selection.
    */
   const resetSimulator = (companionId: 'warm_f' | 'rational_t' | 'dog_c') => {
     setSelectedCompanionId(companionId);
     const targetCompanion = PREVIEW_COMPANIONS.find(c => c.id === companionId) || PREVIEW_COMPANIONS[0];
     setSimulatedMessages([
       {
-        id: `welcome-${Date.now()}`,
+        id: nextMsgId('welcome'),
         sender: 'assistant',
         text: `안녕하세요! 저는 ${targetCompanion.name}입니다. 오늘 하루 어땠는지 편안하게 얘기해 보세요.`,
         timestamp: '오후 9:00'
@@ -236,9 +258,10 @@ export default function LandingPage() {
         },
       });
       if (error) throw error;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '소셜 로그인 진행 도중 에러가 발생했습니다.';
       logger.error(`Social OAuth authentication request failed on provider=${provider}`, err);
-      setErrorMessage(err.message || '소셜 로그인 진행 도중 에러가 발생했습니다. 개발자 옵션 설정을 확인해 주세요.');
+      setErrorMessage(message);
       setIsLoggingIn(false);
     }
   };
@@ -256,16 +279,14 @@ export default function LandingPage() {
     setErrorMessage('');
     setSuccessMessage('');
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       logger.info('Email authentication login successful.');
-      window.location.href = '/dashboard';
-    } catch (err: any) {
+      router.push('/dashboard');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '로그인에 실패했습니다. 이메일 및 비밀번호를 다시 점검해 주세요.';
       logger.error('Email authentication login request failed', err);
-      setErrorMessage(err.message || '로그인에 실패했습니다. 이메일 및 비밀번호를 다시 점검해 주세요.');
+      setErrorMessage(message);
       setIsLoggingIn(false);
     }
   };
@@ -291,25 +312,23 @@ export default function LandingPage() {
         email,
         password,
         options: {
-          data: {
-            full_name: nickname,
-            name: nickname,
-          },
+          data: { full_name: nickname, name: nickname },
         },
       });
       if (error) throw error;
 
       if (data.session) {
         logger.info('Account created and instantly authenticated.');
-        window.location.href = '/dashboard';
+        router.push('/dashboard');
       } else {
         logger.info('Account creation successful, dispatching verification token.');
         setSuccessMessage('회원가입에 성공했습니다! 가입하신 이메일의 편지함에서 인증 링크를 눌러 가입을 승인해 주세요.');
         setIsLoggingIn(false);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '회원가입 요청 중 비정상적인 오류가 발생했습니다.';
       logger.error('Email authentication signup request failed', err);
-      setErrorMessage(err.message || '회원가입 요청 중 비정상적인 오류가 발생했습니다.');
+      setErrorMessage(message);
       setIsLoggingIn(false);
     }
   };
@@ -326,10 +345,12 @@ export default function LandingPage() {
       <header className="fixed top-0 left-0 w-full z-50 backdrop-blur-md bg-slate-950/40 border-b border-white/5 py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
           <div className="flex items-center gap-2 select-none">
-            <img
+            <Image
               src="/logo.png"
               alt="Haru Talk Logo"
-              className="w-8 h-8 rounded-lg object-cover shadow-[0_0_15px_rgba(167,139,250,0.3)] border border-purple-500/20"
+              width={32}
+              height={32}
+              className="rounded-lg object-cover shadow-[0_0_15px_rgba(167,139,250,0.3)] border border-purple-500/20"
             />
             <span className="text-base font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-300">
               하루톡 <span className="text-purple-300 text-xs font-medium font-mono">HaruTalk</span>
@@ -353,7 +374,6 @@ export default function LandingPage() {
 
       {/* 2. HERO SECTION */}
       <section className="relative pt-32 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex flex-col items-center text-center z-10 min-h-[90vh] justify-center">
-        {/* Sub Floating Tag */}
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -364,7 +384,6 @@ export default function LandingPage() {
           <span>쓰는 일기에서, 대화하는 일기로</span>
         </motion.div>
 
-        {/* Heading */}
         <motion.h1
           initial={{ opacity: 0, y: 25 }}
           animate={{ opacity: 1, y: 0 }}
@@ -377,7 +396,6 @@ export default function LandingPage() {
           </span>
         </motion.h1>
 
-        {/* Sub description */}
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -388,7 +406,6 @@ export default function LandingPage() {
           따뜻한 AI 친구와의 한 조각 대화가 한 편의 정교하고 아름다운 감성 일기장으로 다시 쓰입니다.
         </motion.p>
 
-        {/* Action Buttons */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
@@ -420,7 +437,6 @@ export default function LandingPage() {
 
       {/* 3. INTERACTIVE SIMULATOR SECTION */}
       <section ref={simulatorRef} className="py-24 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto z-10 w-full relative">
-        {/* Background Radial Light */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[500px] bg-purple-500/5 rounded-full blur-[100px] pointer-events-none" />
 
         <div className="text-center mb-16">
@@ -431,7 +447,7 @@ export default function LandingPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
           
-          {/* LEFT: Companion Select Cards (3 Columns / 12) */}
+          {/* LEFT: Companion Select Cards */}
           <div className="lg:col-span-5 flex flex-col gap-4">
             <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-1">동반자 선택</p>
             
@@ -441,14 +457,13 @@ export default function LandingPage() {
                 return (
                   <button
                     key={companion.id}
-                    onClick={() => resetSimulator(companion.id as any)}
+                    onClick={() => resetSimulator(companion.id)}
                     className={`w-full text-left p-5 rounded-2xl border transition-all duration-300 flex items-start gap-4 cursor-pointer relative overflow-hidden ${
                       isSelected
                         ? `glass-panel ${companion.borderClass} ${companion.glowClass} ${companion.bgClass}`
                         : 'bg-slate-950/20 border-white/5 hover:border-white/10 hover:bg-slate-900/30'
                     }`}
                   >
-                    {/* Active Accent Light bar */}
                     {isSelected && (
                       <div className={`absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b ${companion.colorClass}`} />
                     )}
@@ -474,12 +489,12 @@ export default function LandingPage() {
             
             {/* Companion Intro Quote */}
             <div className="mt-2 p-4 rounded-xl border border-white/5 bg-slate-950/40 text-[11px] leading-relaxed font-semibold italic text-slate-400 flex gap-2 items-center">
-              <span className="text-base font-serif select-none text-purple-400">“</span>
+              <span className="text-base font-serif select-none text-purple-400">&ldquo;</span>
               <span>{activeCompanion.tagline}</span>
             </div>
           </div>
 
-          {/* RIGHT: Live Interactive Preview Chat Window (7 Columns / 12) */}
+          {/* RIGHT: Live Interactive Preview Chat Window */}
           <div className="lg:col-span-7 flex flex-col">
             <div className="w-full h-full rounded-3xl border border-white/10 glass-panel-heavy overflow-hidden flex flex-col shadow-[0_12px_48px_rgba(0,0,0,0.5)]">
               
@@ -520,7 +535,6 @@ export default function LandingPage() {
                       animate={{ opacity: 1, y: 0 }}
                       className={`flex gap-3 max-w-[85%] ${isUser ? 'self-end flex-row-reverse' : 'self-start'}`}
                     >
-                      {/* Avatar for AI */}
                       {!isUser && (
                         <div className="w-7 h-7 rounded-full bg-slate-900 border border-white/5 flex items-center justify-center shrink-0 text-sm shadow-inner select-none">
                           {activeCompanion.avatar}
@@ -602,48 +616,33 @@ export default function LandingPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           
-          {/* Step 1 */}
           <div className="glass-panel rounded-3xl p-8 relative overflow-hidden group hover:border-purple-500/20 transition-all duration-300">
-            <div className="absolute top-0 right-0 p-6 text-6xl font-mono font-extrabold text-white/5 group-hover:text-purple-500/10 transition-colors select-none">
-              01
-            </div>
-            
+            <div className="absolute top-0 right-0 p-6 text-6xl font-mono font-extrabold text-white/5 group-hover:text-purple-500/10 transition-colors select-none">01</div>
             <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-300 mb-6">
               <Mic className="w-6 h-6" />
             </div>
-
             <h3 className="text-base font-extrabold text-white mb-3">자유로운 말하기 (STT 지원)</h3>
             <p className="text-slate-400 text-xs sm:text-sm font-medium leading-relaxed">
               키보드로 일일이 타이핑할 필요 없습니다. 편안하게 이야기를 털어놓으면 최신 Whisper STT 기능이 목소리를 그대로 정확하게 텍스트화해 줍니다.
             </p>
           </div>
 
-          {/* Step 2 */}
           <div className="glass-panel rounded-3xl p-8 relative overflow-hidden group hover:border-blue-500/20 transition-all duration-300">
-            <div className="absolute top-0 right-0 p-6 text-6xl font-mono font-extrabold text-white/5 group-hover:text-blue-500/10 transition-colors select-none">
-              02
-            </div>
-
+            <div className="absolute top-0 right-0 p-6 text-6xl font-mono font-extrabold text-white/5 group-hover:text-blue-500/10 transition-colors select-none">02</div>
             <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-300 mb-6">
               <Activity className="w-6 h-6" />
             </div>
-
-            <h3 className="text-base font-extrabold text-white mb-3">정밀 감정 & 수치 분석</h3>
+            <h3 className="text-base font-extrabold text-white mb-3">정밀 감정 &amp; 수치 분석</h3>
             <p className="text-slate-400 text-xs sm:text-sm font-medium leading-relaxed">
               대화에 녹아 있는 심리 상태를 인공지능이 분석하여 행복 지수, 스트레스 지수, 슬픔 지수를 수치화한 정밀 인덱스로 시각적 대시보드를 선사합니다.
             </p>
           </div>
 
-          {/* Step 3 */}
           <div className="glass-panel rounded-3xl p-8 relative overflow-hidden group hover:border-rose-500/20 transition-all duration-300">
-            <div className="absolute top-0 right-0 p-6 text-6xl font-mono font-extrabold text-white/5 group-hover:text-rose-500/10 transition-colors select-none">
-              03
-            </div>
-
+            <div className="absolute top-0 right-0 p-6 text-6xl font-mono font-extrabold text-white/5 group-hover:text-rose-500/10 transition-colors select-none">03</div>
             <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-300 mb-6">
               <Calendar className="w-6 h-6" />
             </div>
-
             <h3 className="text-base font-extrabold text-white mb-3">완성형 1인칭 일기 자동 박제</h3>
             <p className="text-slate-400 text-xs sm:text-sm font-medium leading-relaxed">
               친구와 주고받은 카톡식 대화를 기승전결이 깔끔한 1인칭 정서적 일기 책자로 자동 전환합니다. 하루의 정수가 기록으로 박제되어 영원히 기억됩니다.
@@ -657,7 +656,6 @@ export default function LandingPage() {
       <section ref={authSectionRef} className="py-28 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full z-10 relative">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
           
-          {/* Intro description column */}
           <div className="lg:col-span-6 text-left">
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full glass-panel border-purple-500/20 text-[10px] text-purple-300 font-extrabold mb-6">
               <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
@@ -693,7 +691,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Gorgeous Authentication Card column */}
+          {/* Authentication Card */}
           <div className="lg:col-span-6 w-full max-w-md mx-auto">
             <motion.div
               initial={{ opacity: 0, y: 30 }}
@@ -745,22 +743,10 @@ export default function LandingPage() {
                       className="w-full h-13 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-xs sm:text-sm transition-all duration-300 flex items-center justify-center gap-3 border border-slate-200 active:scale-[0.98] shadow-[0_4px_20px_rgba(255,255,255,0.08)] disabled:opacity-50 cursor-pointer select-none"
                     >
                       <svg className="w-4 h-4" viewBox="0 0 24 24">
-                        <path
-                          fill="#4285F4"
-                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                        />
-                        <path
-                          fill="#34A853"
-                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                        />
-                        <path
-                          fill="#FBBC05"
-                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                        />
-                        <path
-                          fill="#EA4335"
-                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                        />
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                       </svg>
                       <span>Google 계정으로 계속하기</span>
                     </button>

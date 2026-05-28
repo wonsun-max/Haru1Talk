@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, BookOpen, Trash2, X, Heart, ArrowLeft, ShieldAlert, Edit3, Plus, Grid, Save, ChevronLeft, ChevronRight, Volume2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -23,6 +24,7 @@ interface ArchiveDiary {
  * in high-fidelity dark glassmorphic styling.
  */
 export default function ArchivePage() {
+  const router = useRouter();
   const [diaries, setDiaries] = useState<ArchiveDiary[]>([]);
   const [selectedDiary, setSelectedDiary] = useState<ArchiveDiary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,15 +59,16 @@ export default function ArchivePage() {
           loadRealArchive();
         } else {
           logger.warn('Unauthenticated access attempt to archive gallery. Redirecting to landing.');
-          window.location.href = '/';
+          router.push('/');
         }
       } catch (err) {
         logger.error('Failed to verify active authentication session on archive startup', err);
-        window.location.href = '/';
+        router.push('/');
       }
     }
     verifyAndLoadArchive();
-  }, []);
+  // WHY: router is stable (Next.js guarantee). safe to include.
+  }, [router]);
 
   /**
    * Loads all active user diary entries from Supabase PostgreSQL.
@@ -343,7 +346,7 @@ export default function ArchivePage() {
       {/* TOP HEADER BAR */}
       <header className="w-full max-w-4xl flex justify-between items-center z-10 mb-8 pb-4 border-b border-white/5 select-none">
         <button
-          onClick={() => window.location.href = '/dashboard'}
+          onClick={() => router.push('/dashboard')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-xs font-semibold transition-all cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -394,7 +397,7 @@ export default function ArchivePage() {
               밤하늘의 친구와 대화를 나누고 첫 일기장을 소중하게 아카이빙해 보세요!
             </p>
             <button
-              onClick={() => window.location.href = '/setup'}
+              onClick={() => router.push('/setup')}
               className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition-colors active:scale-[0.98] cursor-pointer"
             >
               첫 회고 대화 시작하기

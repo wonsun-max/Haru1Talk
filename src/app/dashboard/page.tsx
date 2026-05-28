@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, MessageSquare, Mic, Sparkles, LogOut, ArrowRight } from 'lucide-react';
+import { Calendar, MessageSquare, Mic, Sparkles, LogOut, ArrowRight, Bell, Clock, Check, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
@@ -20,9 +22,16 @@ interface UserProfile {
  * or instantly initiate an ultra-low latency hands-free Voice Call.
  */
 export default function DashboardPage() {
+  const router = useRouter();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isStartingLiveCall, setIsStartingLiveCall] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Scheduled Retrospective Alarm settings states
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
+  const [notificationTime, setNotificationTime] = useState('22:00');
+  const [isSavingNotification, setIsSavingNotification] = useState(false);
+  const [showSaveFeedback, setShowSaveFeedback] = useState(false);
 
   useEffect(() => {
     // Proactively verify the active authentication session on mount
@@ -36,20 +45,72 @@ export default function DashboardPage() {
             name: defaultName,
             avatar_url: session.user.user_metadata?.avatar_url,
           });
+
+          // Pre-populate alarm preferences from user auth metadata
+          if (session.user.user_metadata?.notification_time) {
+            setNotificationTime(session.user.user_metadata.notification_time);
+          }
+          if (session.user.user_metadata?.notification_enabled !== undefined) {
+            setNotificationEnabled(session.user.user_metadata.notification_enabled);
+          }
+
           logger.info('Dashboard: Auth session verified successfully.');
         } else {
           logger.warn('Dashboard: Unauthenticated access attempt. Redirecting to landing page.');
-          window.location.href = '/';
+          router.push('/');
         }
       } catch (err) {
         logger.error('Dashboard: Failed to verify authentication session on startup', err);
-        window.location.href = '/';
+        router.push('/');
       } finally {
         setIsLoading(false);
       }
     }
     loadUser();
-  }, []);
+  // WHY: router is stable (Next.js guarantee). safe to include.
+  }, [router]);
+
+  /**
+   * Updates daily notification alarm settings in Supabase Auth user metadata dynamically.
+   * 
+   * WHY: Enables instant local and backend sync of alarm preferences with active feedback indicators.
+   */
+  const handleUpdateNotification = async (enabled: boolean, time: string) => {
+    setIsSavingNotification(true);
+    setShowSaveFeedback(false);
+    try {
+      // Fetch active session to sync OAuth provider data
+      const { data: { session } } = await supabase.auth.getSession();
+      const provider = session?.user?.app_metadata?.provider || 'email';
+      const providerToken = session?.provider_token || null;
+
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          notification_enabled: enabled,
+          notification_time: time,
+          oauth_provider: provider,
+          kakao_access_token: providerToken,
+        }
+      });
+      if (error) throw error;
+
+      setNotificationEnabled(enabled);
+      setNotificationTime(time);
+      setShowSaveFeedback(true);
+
+      // Hide success feedback icon after 2 seconds
+      setTimeout(() => {
+        setShowSaveFeedback(false);
+      }, 2000);
+
+      logger.info(`Dashboard: Updated alarm setting enabled=${enabled}, time=${time}`);
+    } catch (err) {
+      logger.error('Dashboard: Failed to update notification preferences', err);
+      alert('알림 설정을 변경하는 도중 에러가 발생했습니다.');
+    } finally {
+      setIsSavingNotification(false);
+    }
+  };
 
   /**
    * Destroys active session JWT tokens and signs the user out of the platform.
@@ -59,10 +120,10 @@ export default function DashboardPage() {
   const handleSignOut = async () => {
     try {
       await supabase.auth.signOut();
-      window.location.href = '/';
+      router.push('/');
     } catch (err) {
       logger.error('Dashboard: Failed to execute sign out transaction', err);
-      window.location.href = '/';
+      router.push('/');
     }
   };
 
@@ -96,7 +157,7 @@ export default function DashboardPage() {
       logger.info(`Dashboard: Provisioned live voice session=${sessionData.id} with persona=${savedPersona}`);
       
       // 3. Navigate straight to the chat room in live calling mode!
-      window.location.href = `/chat/${sessionData.id}?mode=live`;
+      router.push(`/chat/${sessionData.id}?mode=live`);
     } catch (err) {
       logger.error('Dashboard: Failed to provision direct voice call session', err);
       alert('음성 통화 세션을 개설하는 도중 에러가 발생했습니다. 테이블 설정을 확인해 주세요.');
@@ -148,10 +209,12 @@ export default function DashboardPage() {
       <header className="w-full max-w-4xl flex justify-between items-center z-10 mb-12 pb-4 border-b border-white/5">
         <div className="flex items-center gap-3">
           {userProfile?.avatar_url ? (
-            <img
+            <Image
               src={userProfile.avatar_url}
               alt="Profile"
-              className="w-10 h-10 rounded-full border border-purple-500/20 shadow-md"
+              width={40}
+              height={40}
+              className="rounded-full border border-purple-500/20 shadow-md object-cover"
             />
           ) : (
             <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md">
@@ -199,7 +262,7 @@ export default function DashboardPage() {
         {/* Portal 1: Calendar Archive */}
         <motion.div
           whileHover={{ scale: 1.02, y: -4 }}
-          onClick={() => window.location.href = '/archive'}
+          onClick={() => router.push('/archive')}
           className="cursor-pointer glass-panel rounded-3xl p-6 border border-white/5 hover:border-purple-500/30 transition-all duration-300 flex flex-col justify-between h-[280px] bg-slate-950/20 shadow-[0_8px_32px_rgba(0,0,0,0.3)]"
         >
           <div>
@@ -220,7 +283,7 @@ export default function DashboardPage() {
         {/* Portal 2: Standard AI Chat setup */}
         <motion.div
           whileHover={{ scale: 1.02, y: -4 }}
-          onClick={() => window.location.href = '/setup'}
+          onClick={() => router.push('/setup')}
           className="cursor-pointer glass-panel rounded-3xl p-6 border border-white/5 hover:border-indigo-500/30 transition-all duration-300 flex flex-col justify-between h-[280px] bg-slate-950/20 shadow-[0_8px_32px_rgba(0,0,0,0.3)]"
         >
           <div>
@@ -259,6 +322,75 @@ export default function DashboardPage() {
           </div>
         </motion.div>
 
+      </section>
+
+      {/* Daily Retrospective Push Alarm Configurator Dock (Google Antigravity Premium) */}
+      <section className="w-full max-w-4xl z-10 mb-12">
+        <div className="glass-panel rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-950/20 shadow-[0_8px_32px_rgba(0,0,0,0.3)] border border-white/5 transition-all duration-300 hover:border-purple-500/20">
+          <div className="flex items-center gap-4 w-full md:w-auto">
+            <button
+              type="button"
+              onClick={() => handleUpdateNotification(!notificationEnabled, notificationTime)}
+              disabled={isSavingNotification}
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border transition-all duration-300 shadow-[0_4px_15px_rgba(0,0,0,0.2)] active:scale-[0.96] cursor-pointer ${
+                notificationEnabled
+                  ? 'bg-purple-500/20 border-purple-400/30 text-purple-300 shadow-[0_0_15px_rgba(167,139,250,0.2)]'
+                  : 'bg-slate-900/60 border-white/5 text-slate-500 hover:text-slate-400'
+              }`}
+            >
+              <Bell className={`w-5.5 h-5.5 ${notificationEnabled && !isSavingNotification ? 'animate-bounce' : ''}`} />
+            </button>
+            <div className="text-left">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>오늘의 회고 푸시 알림</span>
+                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border transition-all ${
+                  notificationEnabled
+                    ? 'bg-purple-400/10 text-purple-300 border-purple-400/20'
+                    : 'bg-slate-800/40 text-slate-500 border-slate-700/40'
+                }`}>
+                  {notificationEnabled ? '활성화' : '비활성화'}
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-1 leading-normal">
+                매일 밤 설정한 시각에 회고용 대화 알림(카카오톡 메시지/Gmail)을 보내드려요.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+            <div className={`flex items-center gap-2 bg-slate-950/60 border px-4 py-2.5 rounded-2xl transition-all duration-300 ${
+              notificationEnabled
+                ? 'border-white/10 opacity-100 hover:border-purple-400/40 focus-within:border-purple-400/50'
+                : 'border-white/5 opacity-40 pointer-events-none'
+            }`}>
+              <Clock className="w-4 h-4 text-purple-300" />
+              <input
+                type="time"
+                value={notificationTime}
+                disabled={!notificationEnabled || isSavingNotification}
+                onChange={(e) => handleUpdateNotification(notificationEnabled, e.target.value)}
+                className="bg-transparent text-white font-bold text-xs outline-none cursor-pointer [color-scheme:dark]"
+              />
+            </div>
+            
+            {/* Real-time Save status feedback icon */}
+            <div className="w-6 h-6 flex items-center justify-center shrink-0">
+              {isSavingNotification ? (
+                <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+              ) : showSaveFeedback ? (
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400"
+                >
+                  <Check className="w-3 h-3 stroke-[3px]" />
+                </motion.div>
+              ) : (
+                <span className="text-[10px] text-slate-500 font-mono select-none">✓</span>
+              )}
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Footer copyright */}

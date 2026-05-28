@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { Sparkles, Heart, Brain, Bone, Bell, ArrowRight, LogOut, Clock, User, Check } from 'lucide-react';
+import { Sparkles, Heart, Brain, Bone, ArrowRight, LogOut, User, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
@@ -16,14 +18,14 @@ interface UserProfile {
  * AI Companion Setup Panel.
  * 
  * WHY: Enables authenticated users to configure their chosen AI Persona
- * and daily notification preferences before starting a secure PostgreSQL
- * chat session record linked to their account.
+ * before starting a secure PostgreSQL chat session record linked to their account.
+ * Notification preferences are managed separately in the Dashboard.
  */
 export default function SetupPage() {
+  const router = useRouter();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [selectedPersona, setSelectedPersona] = useState<'warm_f' | 'rational_t' | 'dog_c'>('warm_f');
-  const [notificationTime, setNotificationTime] = useState('22:00');
-  const [notificationEnabled, setNotificationEnabled] = useState(true);
+
   const [isCreatingSession, setIsCreatingSession] = useState(false);
 
   // Privacy Consent & Nickname states
@@ -45,25 +47,19 @@ export default function SetupPage() {
           });
           setNickname(defaultName);
 
-          // Populate existing saved alarm configurations
-          if (session.user.user_metadata?.notification_time) {
-            setNotificationTime(session.user.user_metadata.notification_time);
-          }
-          if (session.user.user_metadata?.notification_enabled !== undefined) {
-            setNotificationEnabled(session.user.user_metadata.notification_enabled);
-          }
           logger.info('Active Supabase user session loaded successfully.');
         } else {
           logger.warn('No active login session detected. Redirecting securely to landing page.');
-          window.location.href = '/';
+          router.push('/');
         }
       } catch (err) {
         logger.error('Failed to load authenticated user session during setup initialization', err);
-        window.location.href = '/';
+        router.push('/');
       }
     }
     loadUser();
-  }, []);
+  // WHY: router is stable across renders (Next.js guarantee) — safe to include
+  }, [router]);
 
   /**
    * Provisions a brand new chat session record directly in Supabase PostgreSQL.
@@ -94,13 +90,11 @@ export default function SetupPage() {
       const provider = session?.user?.app_metadata?.provider || 'email';
       const providerToken = session?.provider_token || null;
 
-      // 2. Sync custom nickname and alarm preferences to Supabase Auth metadata securely
+      // 2. Sync custom nickname to Supabase Auth metadata securely
       const { error: profileError } = await supabase.auth.updateUser({
         data: {
           full_name: trimmedNickname,
           name: trimmedNickname,
-          notification_time: notificationTime,
-          notification_enabled: notificationEnabled,
           oauth_provider: provider,
           kakao_access_token: providerToken,
         }
@@ -113,9 +107,8 @@ export default function SetupPage() {
       }
       setIsProfileUpdating(false);
 
-      // Save chosen settings to profile preferences local cache
+      // Save chosen persona to profile preferences local cache
       localStorage.setItem('haru_talk_persona', selectedPersona);
-      localStorage.setItem('haru_talk_notif_time', notificationTime);
 
       // Real Supabase PostgreSQL session insert
       const { data: sessionData, error } = await supabase
@@ -131,7 +124,7 @@ export default function SetupPage() {
       if (error || !sessionData) throw error;
 
       logger.info(`Provisioned active Supabase session=${sessionData.id}`);
-      window.location.href = `/chat/${sessionData.id}`;
+      router.push(`/chat/${sessionData.id}`);
     } catch (err) {
       logger.error('Failed to create new chat session in Supabase PostgreSQL', err);
       setIsCreatingSession(false);
@@ -148,10 +141,10 @@ export default function SetupPage() {
   const handleSignOut = async () => {
     try {
       await supabase.auth.signOut();
-      window.location.href = '/';
+      router.push('/');
     } catch (err) {
       logger.error('Failed to execute sign out transaction', err);
-      window.location.href = '/';
+      router.push('/');
     }
   };
 
@@ -168,10 +161,12 @@ export default function SetupPage() {
       <header className="w-full max-w-lg flex justify-between items-center z-10 mb-8 pb-4 border-b border-white/5">
         <div className="flex items-center gap-3">
           {userProfile?.avatar_url ? (
-            <img
+            <Image
               src={userProfile.avatar_url}
               alt="Profile"
-              className="w-10 h-10 rounded-full border border-purple-500/20 shadow-md"
+              width={40}
+              height={40}
+              className="rounded-full border border-purple-500/20 shadow-md object-cover"
             />
           ) : (
             <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md">
@@ -328,50 +323,7 @@ export default function SetupPage() {
           </motion.div>
         </div>
 
-        {/* Daily Alarm Notification card */}
-        <div className="glass-panel rounded-2xl p-5 mb-6 flex items-center justify-between transition-all duration-300 hover:border-purple-500/20">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setNotificationEnabled(!notificationEnabled)}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all duration-300 ${
-                notificationEnabled
-                  ? 'bg-purple-500/20 border-purple-400/30 text-purple-300 shadow-[0_0_10px_rgba(167,139,250,0.15)]'
-                  : 'bg-slate-900/60 border border-white/5 text-slate-500'
-              }`}
-            >
-              <Bell className={`w-5 h-5 ${notificationEnabled ? 'animate-bounce' : ''}`} />
-            </button>
-            <div>
-              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                <span>오늘의 회고 푸시 알림</span>
-                <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-bold border transition-all ${
-                  notificationEnabled
-                    ? 'bg-purple-400/10 text-purple-300 border-purple-400/20'
-                    : 'bg-slate-800/40 text-slate-500 border-slate-700/40'
-                }`}>
-                  {notificationEnabled ? '활성화' : '비활성화'}
-                </span>
-              </h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">매일 밤 설정한 시각에 회고용 대화 알림을 보내드려요.</p>
-            </div>
-          </div>
 
-          <div className={`flex items-center gap-2 bg-slate-950/60 border px-3 py-1.5 rounded-xl transition-all duration-300 ${
-            notificationEnabled
-              ? 'border-white/10 opacity-100 hover:border-purple-400/40 focus-within:border-purple-400/50'
-              : 'border-white/5 opacity-40 pointer-events-none'
-          }`}>
-            <Clock className="w-3.5 h-3.5 text-purple-300" />
-            <input
-              type="time"
-              value={notificationTime}
-              disabled={!notificationEnabled}
-              onChange={(e) => setNotificationTime(e.target.value)}
-              className="bg-transparent text-white font-bold text-xs outline-none cursor-pointer [color-scheme:dark]"
-            />
-          </div>
-        </div>
 
         {/* Privacy Consent Checkbox Card (Custom Checkbox) */}
         <div className="glass-panel rounded-2xl p-5 mb-8 transition-all duration-300 hover:border-purple-500/20">

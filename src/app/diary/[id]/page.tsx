@@ -1,15 +1,35 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Calendar, Heart, Share2, ArrowRight, FolderHeart, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
+interface KakaoShareFeedParams {
+  objectType: string;
+  content: {
+    title: string;
+    description?: string;
+    imageUrl?: string;
+    link: { mobileWebUrl?: string; webUrl?: string };
+  };
+  buttons?: Array<{ title: string; link: { mobileWebUrl?: string; webUrl?: string } }>;
+}
+
 declare global {
   interface Window {
-    Kakao: any;
+    // WHY: Kakao SDK is loaded via external CDN script tag, not via npm.
+    // Share sub-module is explicitly typed to allow sendDefault() calls without resorting to `any`.
+    Kakao: {
+      isInitialized: () => boolean;
+      init: (key: string) => void;
+      Share: {
+        sendDefault: (params: KakaoShareFeedParams) => void;
+      };
+      [key: string]: unknown;
+    };
   }
 }
 
@@ -30,6 +50,7 @@ interface DiaryEntry {
  */
 export default function DiaryPage() {
   const { sessionId } = useParams() as { sessionId: string };
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
   const [diary, setDiary] = useState<DiaryEntry | null>(null);
@@ -71,11 +92,11 @@ export default function DiaryPage() {
           generateRealDiary();
         } else {
           logger.warn('Unauthenticated access attempt to diary compiler. Redirecting to landing.');
-          window.location.href = '/';
+          router.push('/');
         }
       } catch (err) {
         logger.error('Failed to verify active authentication session on diary page', err);
-        window.location.href = '/';
+        router.push('/');
       }
     }
     verifyAndSummarize();
@@ -90,7 +111,7 @@ export default function DiaryPage() {
     try {
       const { data: { session: supabaseSession } } = await supabase.auth.getSession();
       if (!supabaseSession?.user) {
-        window.location.href = '/';
+        router.push('/');
         return;
       }
       const userToken = supabaseSession.access_token;
@@ -121,10 +142,11 @@ export default function DiaryPage() {
       });
       setLoading(false);
       logger.info('Real database diary summary completed successfully.');
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '일기 생성 중 오류가 발생했습니다. 최소 1회 이상 대화를 전송해야 일기장이 완성됩니다.';
       logger.error('Failed to trigger database summarizer pipeline', err);
-      alert(err.message || '일기 생성 중 오류가 발생했습니다. 최소 1회 이상 대화를 전송해야 일기장이 완성됩니다.');
-      window.location.href = `/chat/${sessionId}`;
+      alert(message);
+      router.push(`/chat/${sessionId}`);
     }
   };
 
@@ -396,7 +418,7 @@ export default function DiaryPage() {
                 {/* Primary Button: To archive */}
                 <button
                   id="go-archive-btn"
-                  onClick={() => window.location.href = '/archive'}
+                  onClick={() => router.push('/archive')}
                   className="w-full h-12 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-bold text-xs flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-[0_4px_20px_rgba(167,139,250,0.25)] cursor-pointer"
                 >
                   <FolderHeart className="w-4 h-4" />
@@ -418,7 +440,7 @@ export default function DiaryPage() {
 
                   {/* Start new day dialog */}
                   <button
-                    onClick={() => window.location.href = '/dashboard'}
+                    onClick={() => router.push('/dashboard')}
                     className="h-11 rounded-2xl bg-slate-900 hover:bg-slate-800/80 text-slate-300 hover:text-white border border-slate-800 text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer"
                   >
                     <Heart className="w-4 h-4 text-purple-400" />

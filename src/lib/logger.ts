@@ -1,42 +1,39 @@
 /**
  * Professional logger utility for Haru Talk.
- * 
- * WHY: This utility replaces direct calls to console.log in production,
- * allowing unified handling of runtime diagnostics, trace filtering,
- * and satisfying security auditing rules by preventing key/sensitive data leaks.
+ *
+ * WHY: Replaces direct console calls with a unified logging layer,
+ * enabling environment-specific filtering and preventing accidental
+ * sensitive data exposure in production bundles.
  */
 export const logger = {
   /**
    * Logs informational messages in non-production environments.
-   * 
-   * WHY: Enables trace information during local development while avoiding console clutter in production.
+   *
+   * WHY: Reduces console noise in production while preserving dev-time trace clarity.
    */
   info: (message: string, ...args: unknown[]): void => {
     if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
-      console.info(`[HaruTalk INFO] ${message}`, ...args);
+      console.info(`[HaruTalk INFO] ${message}`, ...args); // eslint-disable-line no-console
     }
   },
 
   /**
-   * Logs warning alerts indicating non-fatal failures or state anomalies.
-   * 
-   * WHY: Provides a trace of sub-optimal execution flows without interrupting the app.
+   * Logs warnings indicating non-fatal failures or anomalous state.
+   *
+   * WHY: Surfaces sub-optimal execution paths without interrupting the app.
    */
   warn: (message: string, ...args: unknown[]): void => {
     if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
-      console.warn(`[HaruTalk WARN] ${message}`, ...args);
+      console.warn(`[HaruTalk WARN] ${message}`, ...args); // eslint-disable-line no-console
     }
   },
 
   /**
-   * Logs severe errors that impact functionality or database requests.
-   * 
-   * WHY: Essential for runtime troubleshooting in both development and production diagnostics.
+   * Logs severe errors that affect functionality or data integrity.
+   *
+   * WHY: Always active (even in production) to enable runtime incident diagnostics.
    */
   error: (message: string, error?: unknown, ...args: unknown[]): void => {
-    // eslint-disable-next-line no-console
-    console.error(`[HaruTalk ERROR] ${message}`, error, ...args);
-  }
+    console.error(`[HaruTalk ERROR] ${message}`, error, ...args); // eslint-disable-line no-console
+  },
 };
