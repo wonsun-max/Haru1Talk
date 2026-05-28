@@ -122,7 +122,7 @@ export default function LandingPage() {
     }
   ]);
   const [isSimulating, setIsSimulating] = useState(false);
-  const simulatorEndRef = useRef<HTMLDivElement>(null);
+  const simulatorScrollRef = useRef<HTMLDivElement>(null);
 
   // Ref pointers for smooth anchors
   const simulatorRef = useRef<HTMLElement>(null);
@@ -148,8 +148,11 @@ export default function LandingPage() {
 
   // Auto scroll interactive chat view on simulated dialogue flow updates
   useEffect(() => {
-    if (simulatorEndRef.current) {
-      simulatorEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (simulatorScrollRef.current) {
+      simulatorScrollRef.current.scrollTo({
+        top: simulatorScrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
     }
   }, [simulatedMessages, isSimulating]);
 
@@ -503,7 +506,10 @@ export default function LandingPage() {
               </div>
 
               {/* Chat Content Display */}
-              <div className="flex-1 p-5 overflow-y-auto min-h-[340px] max-h-[340px] flex flex-col gap-4 scrollbar">
+              <div
+                ref={simulatorScrollRef}
+                className="flex-1 p-5 overflow-y-auto min-h-[340px] max-h-[340px] flex flex-col gap-4 scrollbar"
+              >
                 {simulatedMessages.map((msg) => {
                   const isUser = msg.sender === 'user';
                   return (
@@ -553,7 +559,6 @@ export default function LandingPage() {
                     </div>
                   </div>
                 )}
-                <div ref={simulatorEndRef} />
               </div>
 
               {/* Chat Input / Emotional Presets Grid */}
