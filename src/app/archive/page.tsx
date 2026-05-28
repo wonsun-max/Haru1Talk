@@ -134,7 +134,7 @@ export default function ArchivePage() {
       {/* TOP HEADER BAR */}
       <header className="w-full max-w-xl flex justify-between items-center z-10 mb-8 select-none">
         <button
-          onClick={() => window.location.href = '/setup'}
+          onClick={() => window.location.href = '/dashboard'}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-xs font-semibold transition-all cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />

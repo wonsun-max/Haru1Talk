@@ -131,6 +131,18 @@ export default function ChatPage() {
   }, [sessionId]);
 
   useEffect(() => {
+    // If URL specifies mode=live, automatically activate premium Hands-free voice call mode!
+    if (typeof window !== 'undefined' && window.location.search.includes('mode=live')) {
+      setIsLiveCallMode(true);
+      setLiveCallState('listening');
+      const timer = setTimeout(() => {
+        startAudioRecording();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
     // Automatically auto-scroll chat window when new messages arrive
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isAiTyping]);
@@ -675,7 +687,7 @@ export default function ChatPage() {
       <header className="glass-panel w-full px-4 py-3 flex justify-between items-center z-10 select-none">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => window.location.href = '/setup'}
+            onClick={() => window.location.href = '/dashboard'}
             className="p-1.5 rounded-lg hover:bg-slate-800/50 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5" />

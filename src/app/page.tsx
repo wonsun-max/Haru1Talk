@@ -137,7 +137,7 @@ export default function LandingPage() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           logger.info('Verified session active. Navigating straight to configuration lobby.');
-          window.location.href = '/setup';
+          window.location.href = '/dashboard';
         }
       } catch (err) {
         logger.error('Session acquisition failure on landing page initialization', err);
@@ -231,7 +231,7 @@ export default function LandingPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/setup`,
+          redirectTo: `${window.location.origin}/dashboard`,
         },
       });
       if (error) throw error;
@@ -261,7 +261,7 @@ export default function LandingPage() {
       });
       if (error) throw error;
       logger.info('Email authentication login successful.');
-      window.location.href = '/setup';
+      window.location.href = '/dashboard';
     } catch (err: any) {
       logger.error('Email authentication login request failed', err);
       setErrorMessage(err.message || '로그인에 실패했습니다. 이메일 및 비밀번호를 다시 점검해 주세요.');
@@ -300,7 +300,7 @@ export default function LandingPage() {
 
       if (data.session) {
         logger.info('Account created and instantly authenticated.');
-        window.location.href = '/setup';
+        window.location.href = '/dashboard';
       } else {
         logger.info('Account creation successful, dispatching verification token.');
         setSuccessMessage('회원가입에 성공했습니다! 가입하신 이메일의 편지함에서 인증 링크를 눌러 가입을 승인해 주세요.');

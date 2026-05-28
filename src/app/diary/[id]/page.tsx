@@ -418,7 +418,7 @@ export default function DiaryPage() {
 
                   {/* Start new day dialog */}
                   <button
-                    onClick={() => window.location.href = '/setup'}
+                    onClick={() => window.location.href = '/dashboard'}
                     className="h-11 rounded-2xl bg-slate-900 hover:bg-slate-800/80 text-slate-300 hover:text-white border border-slate-800 text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer"
                   >
                     <Heart className="w-4 h-4 text-purple-400" />
