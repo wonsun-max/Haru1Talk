@@ -7,6 +7,12 @@ import { Sparkles, Calendar, Heart, Share2, ArrowRight, FolderHeart, ShieldCheck
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
+declare global {
+  interface Window {
+    Kakao: any;
+  }
+}
+
 interface DiaryEntry {
   title: string;
   content: string;
@@ -175,14 +181,49 @@ export default function DiaryPage() {
   };
 
   /**
-   * Activates device share triggers or copies diary string to clipboard.
+   * Activates device share triggers, KakaoTalk native templates, or copies diary string to clipboard.
    * 
-   * WHY: Exposes native device sharing or clipboard fallbacks safely.
+   * WHY: Exposes native device sharing, KakaoTalk SDK template feeds, or clipboard fallbacks safely.
    */
   const handleShareDiary = async () => {
     if (!diary) return;
-    const shareText = `[하루 톡] 오늘의 밤 일기장: "${diary.title}"\n\n${diary.content}\n\n감정: ${getEmotionDetails(diary.emotion).emoji} ${getEmotionDetails(diary.emotion).text}`;
+    const emojiMeta = getEmotionDetails(diary.emotion);
+    const shareText = `[하루 톡] 오늘의 밤 일기장: "${diary.title}"\n\n${diary.content}\n\n감정: ${emojiMeta.emoji} ${emojiMeta.text}`;
 
+    // 1. Check if Kakao Developers SDK is initialized and active
+    if (typeof window !== 'undefined' && window.Kakao && window.Kakao.isInitialized()) {
+      try {
+        const directUrl = `${window.location.origin}/diary/${sessionId}`;
+        
+        window.Kakao.Share.sendDefault({
+          objectType: 'feed',
+          content: {
+            title: '🌸 하루 톡 (Haru Talk) | 오늘의 일기장',
+            description: `"${diary.title}"\n\n감정: ${emojiMeta.emoji} ${emojiMeta.text}\n\n오늘 밤, 친구와 나눈 소중한 하루의 기록입니다.`,
+            imageUrl: 'https://haru1talk.vercel.app/logo.png', // Fallback to live deployed brand logo
+            link: {
+              mobileWebUrl: directUrl,
+              webUrl: directUrl,
+            },
+          },
+          buttons: [
+            {
+              title: '일기장 보러가기 🌙',
+              link: {
+                mobileWebUrl: directUrl,
+                webUrl: directUrl,
+              },
+            },
+          ],
+        });
+        logger.info('KakaoTalk Share feed template successfully dispatched.');
+        return;
+      } catch (err) {
+        logger.error('Failed to dispatch KakaoTalk native Share API', err);
+      }
+    }
+
+    // 2. Fallback to native Web Share API
     if (navigator.share) {
       try {
         await navigator.share({
@@ -193,6 +234,7 @@ export default function DiaryPage() {
         logger.warn('User dismissed native share dialog', err);
       }
     } else {
+      // 3. Fallback to copy clipboard
       try {
         await navigator.clipboard.writeText(shareText);
         alert('일기 내용이 클립보드에 깔끔하게 복사되었습니다!');
