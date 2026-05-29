@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, MessageSquare, Mic, Sparkles, LogOut, ArrowRight, Bell, Clock, Check, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
+import WeeklyLetterCard, { type WeeklyLetter } from '@/components/WeeklyLetterCard';
+import StreakCard, { type StreakData } from '@/components/StreakCard';
+import BadgeUnlockModal from '@/components/BadgeUnlockModal';
 
 interface UserProfile {
   id: string;
@@ -32,6 +35,11 @@ export default function DashboardPage() {
   const [notificationTime, setNotificationTime] = useState('22:00');
   const [isSavingNotification, setIsSavingNotification] = useState(false);
   const [showSaveFeedback, setShowSaveFeedback] = useState(false);
+
+  // Feature states: Weekly Letter + Streak
+  const [weeklyLetter, setWeeklyLetter] = useState<WeeklyLetter | null>(null);
+  const [streakData, setStreakData] = useState<StreakData | null>(null);
+  const [unlockedBadge, setUnlockedBadge] = useState<string | null>(null);
 
   useEffect(() => {
     // Proactively verify the active authentication session on mount
@@ -67,16 +75,48 @@ export default function DashboardPage() {
             setNotificationEnabled(session.user.user_metadata.notification_enabled);
           }
 
-          // Auto-sync Kakao access token in metadata to keep it fresh for cron jobs
+          // WHY: Always sync oauth_provider metadata for Kakao users on every dashboard load.
+          // If only synced when the token CHANGES, a stale oauth_provider field can cause
+          // the notification cron to misidentify the provider as 'email' and miss Kakao dispatch.
           const provider = session.user.app_metadata?.provider || 'email';
           const providerToken = session.provider_token;
-          if (provider === 'kakao' && providerToken && session.user.user_metadata?.kakao_access_token !== providerToken) {
-            logger.info('Dashboard: Auto-syncing fresh Kakao access token to user metadata.');
-            await supabase.auth.updateUser({
-              data: {
-                oauth_provider: 'kakao',
-                kakao_access_token: providerToken,
-              }
+          if (provider === 'kakao') {
+            logger.info('Dashboard: Syncing Kakao provider metadata and access token.');
+            const updatePayload: Record<string, string | null> = {
+              oauth_provider: 'kakao',
+            };
+            if (providerToken) {
+              updatePayload.kakao_access_token = providerToken;
+            }
+            await supabase.auth.updateUser({ data: updatePayload });
+          }
+
+          // Fetch latest weekly letter for this user
+          const { data: letterData, error: letterError } = await supabase
+            .from('weekly_letters')
+            .select('*')
+            .eq('user_id', session.user.id)
+            .order('week_start', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (!letterError && letterData) {
+            setWeeklyLetter(letterData as WeeklyLetter);
+          }
+
+          // Fetch streak data for this user
+          const { data: streakRow, error: streakError } = await supabase
+            .from('user_streaks')
+            .select('current_streak, longest_streak, total_diaries, badges')
+            .eq('user_id', session.user.id)
+            .single();
+
+          if (!streakError && streakRow) {
+            setStreakData({
+              currentStreak: streakRow.current_streak,
+              longestStreak: streakRow.longest_streak,
+              totalDiaries: streakRow.total_diaries,
+              badges: streakRow.badges,
             });
           }
 
@@ -194,6 +234,12 @@ export default function DashboardPage() {
   // Profile icon fallback initials generator
   const getInitial = (name: string) => name.charAt(0) || 'U';
 
+  /**
+   * Dismisses the badge unlock confetti modal.
+   * WHY: useCallback prevents child re-renders from re-creating this reference.
+   */
+  const handleCloseBadgeModal = useCallback(() => setUnlockedBadge(null), []);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#02020a] to-[#04041a]">
@@ -263,7 +309,7 @@ export default function DashboardPage() {
       </header>
 
       {/* Landing Center Title */}
-      <section className="w-full max-w-4xl z-10 text-center mb-12">
+      <section className="w-full max-w-4xl z-10 text-center mb-8">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -281,6 +327,20 @@ export default function DashboardPage() {
           과거의 일기첩을 열어 추억하거나, 따뜻한 인공지능 친구와 대화를 나누고 손쉽게 감성 일기를 자동으로 처방받아 보세요.
         </p>
       </section>
+
+      {/* Weekly AI Letter Card */}
+      {weeklyLetter && (
+        <div className="w-full max-w-4xl z-10 mb-4">
+          <WeeklyLetterCard letter={weeklyLetter} />
+        </div>
+      )}
+
+      {/* Streak + Badge Card */}
+      {streakData && streakData.totalDiaries > 0 && (
+        <div className="w-full max-w-4xl z-10 mb-8">
+          <StreakCard streak={streakData} />
+        </div>
+      )}
 
       {/* Grid Dashboard Cards (Google Antigravity Premium) */}
       <section className="w-full max-w-4xl z-10 grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
@@ -423,6 +483,9 @@ export default function DashboardPage() {
       <footer className="w-full max-w-4xl z-10 text-center border-t border-white/5 pt-8 text-[10px] text-slate-500">
         <p>© 2026 Haru Talk Team. All rights reserved. Securely powered by Supabase PostgreSQL & OpenAI.</p>
       </footer>
+
+      {/* Badge Unlock Confetti Modal — rendered at root z-level to overlay everything */}
+      <BadgeUnlockModal badgeKey={unlockedBadge} onClose={handleCloseBadgeModal} />
     </main>
   );
 }

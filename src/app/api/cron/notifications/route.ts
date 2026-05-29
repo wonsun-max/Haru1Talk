@@ -9,8 +9,12 @@ export const dynamic = 'force-dynamic';
  * 
  * WHY: Uses Kakao's native Memo API to send a rich Feed message directly to
  * the user's own KakaoTalk chat room.
+ * Returns { ok, errorDetail } so debug mode can surface the raw Kakao API response.
  */
-async function dispatchKakaoTalkPush(accessToken: string, nickname: string) {
+async function dispatchKakaoTalkPush(
+  accessToken: string,
+  nickname: string
+): Promise<{ ok: boolean; errorDetail?: unknown }> {
   try {
     const templateObject = {
       object_type: 'feed',
@@ -36,7 +40,9 @@ async function dispatchKakaoTalkPush(accessToken: string, nickname: string) {
       ]
     };
 
-    const response = await fetch('https://kapi.kakao.com/v2/api/talk/memo/send', {
+    // WHY: /memo/default/send accepts a template_object JSON directly (no pre-registered template needed).
+    // /memo/send requires a pre-registered template_id from Kakao Developer Console — wrong endpoint.
+    const response = await fetch('https://kapi.kakao.com/v2/api/talk/memo/default/send', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -49,15 +55,17 @@ async function dispatchKakaoTalkPush(accessToken: string, nickname: string) {
 
     const result = await response.json();
     if (!response.ok) {
+      // WHY: Surface raw Kakao error (code + msg) for debug diagnosis.
+      // Common codes: -401 (token expired), -403 (scope not granted), -502 (KakaoTalk not installed)
       logger.error('Failed to dispatch KakaoTalk message via API', result);
-      return false;
+      return { ok: false, errorDetail: result };
     }
     
     logger.info(`Successfully dispatched KakaoTalk message to ${nickname}`);
-    return true;
+    return { ok: true };
   } catch (err) {
     logger.error('Error executing KakaoTalk messaging API request', err);
-    return false;
+    return { ok: false, errorDetail: String(err) };
   }
 }
 
@@ -66,13 +74,17 @@ async function dispatchKakaoTalkPush(accessToken: string, nickname: string) {
  * 
  * WHY: Leverages Resend's REST endpoint via zero-dependency HTTP fetch
  * to send starry-night responsive HTML notifications to Gmail addresses.
+ * Returns { ok, errorDetail } so debug mode can surface the raw Resend API response.
  */
-async function dispatchResendEmail(emailAddress: string, nickname: string) {
+async function dispatchResendEmail(
+  emailAddress: string,
+  nickname: string
+): Promise<{ ok: boolean; errorDetail?: unknown }> {
   try {
     const resendApiKey = process.env.RESEND_API_KEY;
     if (!resendApiKey || resendApiKey.includes('placeholder')) {
       logger.warn('Resend API key is missing or set to placeholder. Skipping email dispatch.');
-      return false;
+      return { ok: false, errorDetail: 'RESEND_API_KEY missing or placeholder' };
     }
 
     const htmlContent = `
@@ -100,8 +112,11 @@ async function dispatchResendEmail(emailAddress: string, nickname: string) {
         'Authorization': `Bearer ${resendApiKey}`,
       },
       body: JSON.stringify({
-        from: 'Haru Talk <onboarding@resend.dev>', // Resend sandbox default from address
-        to: emailAddress,
+        from: 'Haru Talk <onboarding@resend.dev>',
+        // WHY: Resend sandbox (onboarding@resend.dev) can only deliver to the account owner's
+        // verified email. RESEND_TEST_OVERRIDE_TO lets us redirect all test sends to that
+        // address. In production (custom domain), this env var is unset and emailAddress is used.
+        to: process.env.RESEND_TEST_OVERRIDE_TO || emailAddress,
         subject: `[하루톡] 밤의 대화가 기다리고 있어요 🌙`,
         html: htmlContent,
       }),
@@ -110,14 +125,14 @@ async function dispatchResendEmail(emailAddress: string, nickname: string) {
     const result = await response.json();
     if (!response.ok) {
       logger.error('Failed to dispatch email via Resend API', result);
-      return false;
+      return { ok: false, errorDetail: result };
     }
 
     logger.info(`Successfully dispatched Gmail notification to ${nickname} (${emailAddress})`);
-    return true;
+    return { ok: true };
   } catch (err) {
     logger.error('Error executing Resend email dispatch request', err);
-    return false;
+    return { ok: false, errorDetail: String(err) };
   }
 }
 
@@ -175,6 +190,9 @@ export async function GET(request: NextRequest) {
 
     let kakaoSent = 0;
     let emailSent = 0;
+    // WHY: In debug mode, collect raw API error payloads per user so the caller
+    // can diagnose channel failures without reading server logs.
+    const debugErrors: Array<{ userId: string; channel: string; error: unknown }> = [];
 
     // 5. Dispatch matching notifications based on OAuth provider
     for (const user of targetUsers) {
@@ -193,30 +211,37 @@ export async function GET(request: NextRequest) {
       if (provider === 'kakao') {
         const kakaoAccessToken = meta?.kakao_access_token;
         if (kakaoAccessToken) {
-          const success = await dispatchKakaoTalkPush(kakaoAccessToken, nickname);
-          if (success) {
+          const result = await dispatchKakaoTalkPush(kakaoAccessToken, nickname);
+          if (result.ok) {
             kakaoSent++;
             notified = true;
           } else {
-            // WHY: Kakao access tokens expire every ~6h. If Kakao dispatch fails for ANY reason
-            // (expired token, network error, permissions revoked), we fall through to Gmail
-            // to guarantee at least one notification channel reaches the user.
             logger.warn(`Kakao dispatch failed for user=${user.id}. Attempting Gmail fallback.`);
+            if (isDebug) debugErrors.push({ userId: user.id, channel: 'kakao', error: result.errorDetail });
           }
         } else {
           logger.warn(`Missing Kakao access token for user=${user.id}, falling back to Gmail.`);
+          if (isDebug) debugErrors.push({ userId: user.id, channel: 'kakao', error: 'missing_kakao_access_token' });
         }
 
         // Gmail fallback: run if Kakao token absent OR Kakao dispatch failed
         if (!notified && emailAddress) {
-          const success = await dispatchResendEmail(emailAddress, nickname);
-          if (success) emailSent++;
+          const result = await dispatchResendEmail(emailAddress, nickname);
+          if (result.ok) {
+            emailSent++;
+          } else if (isDebug) {
+            debugErrors.push({ userId: user.id, channel: 'email_fallback', error: result.errorDetail });
+          }
         }
       } else {
         // Default to Google / Gmail notifications for all non-Kakao providers
         if (emailAddress) {
-          const success = await dispatchResendEmail(emailAddress, nickname);
-          if (success) emailSent++;
+          const result = await dispatchResendEmail(emailAddress, nickname);
+          if (result.ok) {
+            emailSent++;
+          } else if (isDebug) {
+            debugErrors.push({ userId: user.id, channel: 'email', error: result.errorDetail });
+          }
         }
       }
     }
@@ -230,7 +255,10 @@ export async function GET(request: NextRequest) {
       dispatched: {
         kakao: kakaoSent,
         email: emailSent
-      }
+      },
+      // WHY: Only included in debug mode — exposes raw Kakao/Resend error payloads
+      // that would otherwise require reading server logs.
+      ...(isDebug && { errors: debugErrors }),
     });
 
   } catch (err) {

@@ -14,6 +14,11 @@ export const metadata: Metadata = {
   keywords: ['하루톡', '대화형 일기', 'AI 일기장', '감정 분석', 'Whisper STT', 'Next.js 일기', 'Supabase 일기'],
   authors: [{ name: 'Haru Talk Team' }],
   manifest: '/manifest.json', // Added manifest linking for PWA support
+  // WHY: Next.js metadata.verification renders <meta name="google-site-verification"> automatically,
+  // avoiding manual JSX in the head and keeping SEO config co-located.
+  verification: {
+    google: 'uE5gUQXj757xRfy5GP1Hkv68N7ENdNCGy_WNVNG8GUo',
+  },
   openGraph: {
     title: '하루 톡 (Haru Talk) | 대화하는 AI 감성 일기장',
     description: '친구와 카톡하듯 대화하면 AI가 기승전결이 있는 한 편의 예쁜 일기를 써 줍니다.',

@@ -8,6 +8,110 @@ const openai = new OpenAI({
 });
 
 /**
+ * Badge milestone definitions ordered by ascending streak requirement.
+ * WHY: Centralising milestones here ensures the streak update logic
+ * and any future badge display code share a single source of truth.
+ */
+const BADGE_MILESTONES: { key: string; streak: number }[] = [
+  { key: 'flame_3',   streak: 3   },
+  { key: 'star_7',    streak: 7   },
+  { key: 'moon_14',   streak: 14  },
+  { key: 'galaxy_30', streak: 30  },
+  { key: 'legend_100',streak: 100 },
+];
+
+interface StreakUpdateResult {
+  currentStreak: number;
+  longestStreak: number;
+  totalDiaries: number;
+  badges: string[];
+  /** Newly unlocked badge key, or null if none was earned this write. */
+  newBadge: string | null;
+}
+
+/**
+ * Upserts the user_streaks row after a successful diary save.
+ *
+ * WHY: Runs as a non-fatal side-effect after diary persistence. If this
+ * function throws, the diary response is still returned — streak state is
+ * eventually consistent rather than transactionally coupled to diary writes.
+ */
+async function updateUserStreak(userId: string, diaryDateStr: string): Promise<StreakUpdateResult> {
+  const todayKst = diaryDateStr; // YYYY-MM-DD already in KST from request body
+
+  // Fetch existing streak record (may not exist for first-time users)
+  const { data: existing } = await supabaseAdmin
+    .from('user_streaks')
+    .select('current_streak, longest_streak, last_diary_date, total_diaries, badges')
+    .eq('user_id', userId)
+    .single();
+
+  const prev = existing ?? {
+    current_streak: 0,
+    longest_streak: 0,
+    last_diary_date: null as string | null,
+    total_diaries: 0,
+    badges: [] as string[],
+  };
+
+  // Guard: if diary was already counted today, return unchanged state
+  if (prev.last_diary_date === todayKst) {
+    return {
+      currentStreak: prev.current_streak,
+      longestStreak: prev.longest_streak,
+      totalDiaries: prev.total_diaries,
+      badges: prev.badges,
+      newBadge: null,
+    };
+  }
+
+  // Compute new streak: +1 if yesterday's date matches last_diary_date, else reset to 1
+  const yesterday = new Date(todayKst);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+  const newStreak = prev.last_diary_date === yesterdayStr ? prev.current_streak + 1 : 1;
+  const newLongest = Math.max(prev.longest_streak, newStreak);
+  const newTotal = prev.total_diaries + 1;
+
+  // Determine if any new badge was just unlocked
+  const existingBadgeSet = new Set<string>(prev.badges);
+  let newBadge: string | null = null;
+  for (const milestone of BADGE_MILESTONES) {
+    if (newStreak >= milestone.streak && !existingBadgeSet.has(milestone.key)) {
+      existingBadgeSet.add(milestone.key);
+      newBadge = milestone.key; // Surface the highest newly-earned badge
+    }
+  }
+  const updatedBadges = Array.from(existingBadgeSet);
+
+  // Upsert the streak row (INSERT or UPDATE based on PK collision)
+  const { error: upsertError } = await supabaseAdmin
+    .from('user_streaks')
+    .upsert({
+      user_id: userId,
+      current_streak: newStreak,
+      longest_streak: newLongest,
+      last_diary_date: todayKst,
+      total_diaries: newTotal,
+      badges: updatedBadges,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
+
+  if (upsertError) {
+    logger.error('Failed to upsert user_streaks — non-fatal, diary already saved', upsertError);
+  }
+
+  return {
+    currentStreak: newStreak,
+    longestStreak: newLongest,
+    totalDiaries: newTotal,
+    badges: updatedBadges,
+    newBadge,
+  };
+}
+
+/**
  * AI Diary Summarization Route.
  * 
  * WHY: Processes active chat logs, distills major events and primary emotions
@@ -177,8 +281,28 @@ export async function POST(request: NextRequest) {
 
     logger.info(`Diary generated successfully for session=${sessionId}`);
 
-    // 10. Return generated diary details
-    return NextResponse.json({ diary: diaryData });
+    // 10. Update user streak — non-fatal side-effect after diary is persisted
+    let streakResult: StreakUpdateResult | null = null;
+    try {
+      streakResult = await updateUserStreak(user.id, diaryDate);
+      if (streakResult.newBadge) {
+        logger.info(`Badge unlocked: user=${user.id}, badge=${streakResult.newBadge}, streak=${streakResult.currentStreak}`);
+      }
+    } catch (streakErr) {
+      // WHY: Streak failure must never block the diary response — eventual consistency is acceptable here.
+      logger.error('Non-fatal streak update failure after diary save', streakErr);
+    }
+
+    // 11. Return diary + streak metadata (newBadge triggers confetti modal on client)
+    return NextResponse.json({
+      diary: diaryData,
+      streak: streakResult ? {
+        currentStreak: streakResult.currentStreak,
+        longestStreak: streakResult.longestStreak,
+        totalDiaries: streakResult.totalDiaries,
+        newBadge: streakResult.newBadge,
+      } : null,
+    });
 
   } catch (err) {
     logger.error('Unexpected error in /api/summarize route', err);

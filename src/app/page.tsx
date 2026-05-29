@@ -255,6 +255,7 @@ export default function LandingPage() {
         options: {
           redirectTo: `${window.location.origin}/dashboard`,
           scopes: provider === 'kakao' ? 'talk_message' : undefined,
+          queryParams: provider === 'kakao' ? { prompt: 'consent' } : undefined,
         },
       });
       if (error) throw error;

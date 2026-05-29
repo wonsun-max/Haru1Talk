@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { Sparkles, Heart, Brain, Bone, ArrowRight, LogOut, User, Check } from 'lucide-react';
+import { Sparkles, Heart, Brain, Bone, ArrowRight, LogOut, User, Check, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
@@ -173,22 +173,32 @@ export default function SetupPage() {
       {/* Navigation Header */}
       <header className="w-full max-w-lg flex justify-between items-center z-10 mb-8 pb-4 border-b border-white/5">
         <div className="flex items-center gap-3">
-          {userProfile?.avatar_url ? (
-            <Image
-              src={userProfile.avatar_url}
-              alt="Profile"
-              width={40}
-              height={40}
-              className="rounded-full border border-purple-500/20 shadow-md object-cover"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md">
-              {userProfile ? getInitial(userProfile.name) : 'U'}
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-xs font-semibold transition-all cursor-pointer mr-1"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>메인으로</span>
+          </button>
+          
+          <div className="flex items-center gap-2 border-l border-white/10 pl-3">
+            {userProfile?.avatar_url ? (
+              <Image
+                src={userProfile.avatar_url}
+                alt="Profile"
+                width={32}
+                height={32}
+                className="rounded-full border border-purple-500/20 shadow-md object-cover"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md text-xs">
+                {userProfile ? getInitial(userProfile.name) : 'U'}
+              </div>
+            )}
+            <div>
+              <p className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider leading-none">웰컴</p>
+              <h2 className="text-xs font-bold text-white mt-0.5">{userProfile?.name}님</h2>
             </div>
-          )}
-          <div>
-            <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">웰컴</p>
-            <h2 className="text-sm font-bold text-white">{userProfile?.name}님</h2>
           </div>
         </div>
 

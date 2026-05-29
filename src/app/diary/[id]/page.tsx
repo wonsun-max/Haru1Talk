@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Calendar, Heart, Share2, ArrowRight, FolderHeart, ShieldCheck } from 'lucide-react';
+import { Sparkles, Calendar, Heart, Share2, ArrowRight, FolderHeart, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 
@@ -344,6 +344,22 @@ export default function DiaryPage() {
               transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
               className="w-full max-w-md z-10"
             >
+              {/* TOP HEADER BAR */}
+              <header className="w-full flex justify-between items-center z-10 mb-6 pb-3 border-b border-white/5 select-none">
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-xs font-semibold transition-all cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>메인으로</span>
+                </button>
+
+                <h1 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-300 animate-pulse" />
+                  <span>오늘의 일기장 회고</span>
+                </h1>
+              </header>
+
               {/* Header Title info */}
               <div className="text-center mb-6">
                 <motion.div

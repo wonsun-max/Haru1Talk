@@ -159,3 +159,75 @@ CREATE POLICY "Users can delete their own diaries"
 ON public.diaries FOR DELETE 
 TO authenticated 
 USING (auth.uid() = user_id);
+
+
+-- ====================================================================
+-- 4. WEEKLY LETTERS TABLE
+--
+-- WHY: Stores AI-generated weekly retrospective letters distilled from
+-- a user's last 7 days of diary entries. Unique constraint on
+-- (user_id, week_start) prevents duplicate letter generation per week,
+-- even under concurrent Vercel Cron triggers.
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS public.weekly_letters (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    week_start DATE NOT NULL,               -- Monday of the letter's week (KST)
+    subject TEXT NOT NULL,                  -- Poetic letter subject line
+    content TEXT NOT NULL,                  -- Full 1st-person literary letter body
+    avg_sentiment NUMERIC(3, 1),            -- Mean sentiment score for the week
+    dominant_emotion TEXT,                  -- Most frequent emotion across week's diaries
+    diary_count INT NOT NULL DEFAULT 0,     -- Number of diaries analyzed for this letter
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(user_id, week_start)
+);
+
+CREATE INDEX IF NOT EXISTS idx_weekly_letters_user_id ON public.weekly_letters(user_id);
+CREATE INDEX IF NOT EXISTS idx_weekly_letters_week_start ON public.weekly_letters(week_start DESC);
+
+ALTER TABLE public.weekly_letters ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can select their own weekly letters"
+ON public.weekly_letters FOR SELECT
+TO authenticated
+USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own weekly letters"
+ON public.weekly_letters FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = user_id);
+
+
+-- ====================================================================
+-- 5. USER STREAKS TABLE
+--
+-- WHY: Tracks per-user daily journaling streaks and earned badge rewards.
+-- Uses a single-row-per-user upsert pattern (user_id as PK) for O(1)
+-- read/write performance. badges[] column stores earned milestone keys.
+-- ====================================================================
+CREATE TABLE IF NOT EXISTS public.user_streaks (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    current_streak INT NOT NULL DEFAULT 0,   -- Current consecutive diary days (KST)
+    longest_streak INT NOT NULL DEFAULT 0,   -- All-time personal best streak
+    last_diary_date DATE,                    -- Date of the most recent diary (KST)
+    total_diaries INT NOT NULL DEFAULT 0,    -- Cumulative diary count
+    badges TEXT[] NOT NULL DEFAULT '{}',     -- Array of earned badge keys
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.user_streaks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can select their own streak"
+ON public.user_streaks FOR SELECT
+TO authenticated
+USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can upsert their own streak"
+ON public.user_streaks FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own streak"
+ON public.user_streaks FOR UPDATE
+TO authenticated
+USING (auth.uid() = user_id);
