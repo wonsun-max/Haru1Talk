@@ -470,10 +470,10 @@ export default function ArchivePage() {
             </div>
 
             {/* Calendar Grid Sheet */}
-            <div className="glass-panel rounded-3xl border border-white/5 p-4 bg-slate-950/20 flex-1 flex flex-col">
+            <div className="glass-panel rounded-2xl sm:rounded-3xl border border-white/5 p-2 sm:p-4 bg-slate-950/20 flex-1 flex flex-col">
               
               {/* Day Labels */}
-              <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-extrabold text-slate-500 mb-3 uppercase tracking-wider pb-2 border-b border-white/5">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center text-[10px] font-extrabold text-slate-500 mb-3 uppercase tracking-wider pb-2 border-b border-white/5">
                 <span className="text-red-400/80">일</span>
                 <span>월</span>
                 <span>화</span>
@@ -484,13 +484,13 @@ export default function ArchivePage() {
               </div>
 
               {/* Grid cells */}
-              <div className="grid grid-cols-7 gap-2.5 flex-1 min-h-[360px]">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2.5 flex-1 min-h-[280px] sm:min-h-[360px]">
                 {calendarCells.map((cell, idx) => {
                   if (cell.isPadding) {
                     return (
                       <div
                         key={`pad-${idx}`}
-                        className="bg-transparent rounded-2xl border border-transparent opacity-20 pointer-events-none"
+                        className="bg-transparent rounded-xl sm:rounded-2xl border border-transparent opacity-20 pointer-events-none"
                       />
                     );
                   }
@@ -506,25 +506,27 @@ export default function ArchivePage() {
                         key={`cell-${cell.dayNum}`}
                         whileHover={{ scale: 1.02, y: -2 }}
                         onClick={() => handleOpenDetailModal(activeDiary)}
-                        className={`cursor-pointer rounded-2xl p-2.5 flex flex-col justify-between border relative overflow-hidden transition-all duration-300 shadow-[0_4px_15px_rgba(0,0,0,0.2)] bg-purple-950/10 border-purple-500/25 hover:border-purple-400/60`}
+                        className={`cursor-pointer rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 flex flex-col justify-between border relative overflow-hidden transition-all duration-300 shadow-[0_4px_15px_rgba(0,0,0,0.2)] bg-purple-950/10 border-purple-500/25 hover:border-purple-400/60`}
                       >
                         {/* Day indicator */}
                         <div className="flex justify-between items-start z-10">
-                          <span className={`text-[10px] font-extrabold ${isSunday ? 'text-red-400' : isSaturday ? 'text-blue-400' : 'text-slate-300'}`}>
+                          <span className={`text-[9px] sm:text-[10px] font-extrabold ${isSunday ? 'text-red-400' : isSaturday ? 'text-blue-400' : 'text-slate-300'}`}>
                             {cell.dayNum}
                           </span>
-                          <span className="text-[11px]">{meta.emoji}</span>
+                          <span className="text-[9px] sm:text-[11px]">{meta.emoji}</span>
                         </div>
 
                         {/* Title thumbnail text */}
-                        <h4 className="text-[9px] font-bold text-white leading-tight line-clamp-2 mt-2 z-10 select-none">
+                        <h4 className="hidden sm:block text-[9px] font-bold text-white leading-tight line-clamp-2 mt-2 z-10 select-none">
                           {activeDiary.title}
                         </h4>
 
                         {/* Sentiment level dot highlight */}
-                        <div className="flex justify-between items-center mt-2.5 pt-1.5 border-t border-white/5 z-10">
-                          <span className="text-[8px] font-semibold text-purple-300/80">Score {activeDiary.sentiment_score.toFixed(1)}</span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                        <div className="flex justify-between items-center mt-1 sm:mt-2.5 pt-1 sm:pt-1.5 border-t border-white/5 z-10">
+                          <span className="text-[7px] sm:text-[8px] font-semibold text-purple-300/80">
+                            <span className="hidden sm:inline">Score </span>{activeDiary.sentiment_score.toFixed(1)}
+                          </span>
+                          <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-purple-400 animate-pulse" />
                         </div>
                       </motion.div>
                     );
@@ -536,18 +538,18 @@ export default function ArchivePage() {
                       key={`cell-${cell.dayNum}`}
                       whileHover={{ scale: 1.02, border: '1px solid rgba(167, 139, 250, 0.25)', backgroundColor: 'rgba(15, 23, 42, 0.4)' }}
                       onClick={() => handleOpenCreateModal(cell.dateStr)}
-                      className="cursor-pointer rounded-2xl p-2.5 flex flex-col justify-between border border-white/5 bg-slate-950/10 text-left relative transition-all group"
+                      className="cursor-pointer rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 flex flex-col justify-between border border-white/5 bg-slate-950/10 text-left relative transition-all group"
                     >
-                      <span className={`text-[10px] font-extrabold ${isSunday ? 'text-red-500/50' : isSaturday ? 'text-blue-500/50' : 'text-slate-600'}`}>
+                      <span className={`text-[9px] sm:text-[10px] font-extrabold ${isSunday ? 'text-red-500/50' : isSaturday ? 'text-blue-500/50' : 'text-slate-600'}`}>
                         {cell.dayNum}
                       </span>
 
                       {/* Micro-interaction '+' symbol appear on hover */}
-                      <div className="flex-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-                        <Plus className="w-3.5 h-3.5 text-purple-400/80 animate-pulse" />
+                      <div className="flex-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 sm:mt-1">
+                        <Plus className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-purple-400/80 animate-pulse" />
                       </div>
 
-                      <span className="text-[7px] font-bold text-slate-800 group-hover:text-purple-400/40 text-center select-none mt-1">
+                      <span className="hidden sm:block text-[7px] font-bold text-slate-800 group-hover:text-purple-400/40 text-center select-none mt-1">
                         비어있음
                       </span>
                     </motion.div>
@@ -620,7 +622,7 @@ export default function ArchivePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className={`glass-panel-heavy rounded-3xl w-full p-6 border border-purple-500/25 relative overflow-hidden transition-all duration-300 ${activeTab === 'chat' ? 'max-w-lg' : 'max-w-md'}`}
+              className={`glass-panel-heavy rounded-2xl sm:rounded-3xl w-full p-5 sm:p-6 border border-purple-500/25 relative overflow-hidden transition-all duration-300 ${activeTab === 'chat' ? 'max-w-lg' : 'max-w-md'}`}
             >
               {/* Corner close button */}
               <button
@@ -678,7 +680,7 @@ export default function ArchivePage() {
                         </span>
                       </div>
 
-                      <div className="max-h-64 overflow-y-auto pr-1 select-text">
+                      <div className="max-h-[45vh] sm:max-h-64 overflow-y-auto pr-1 select-text">
                         <h2 className="text-sm font-extrabold text-white mb-3 leading-snug">
                           "{selectedDiary.title}"
                         </h2>
@@ -689,7 +691,7 @@ export default function ArchivePage() {
                     </>
                   ) : (
                     /* Chat Replay Timeline */
-                    <div className="max-h-64 overflow-y-auto pr-1 space-y-4 select-text">
+                    <div className="max-h-[45vh] sm:max-h-64 overflow-y-auto pr-1 space-y-4 select-text">
                       {loadingChat ? (
                         <div className="text-center py-10 text-slate-500 text-[11px] flex flex-col items-center justify-center">
                           <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mb-3" />
@@ -864,7 +866,7 @@ export default function ArchivePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="glass-panel-heavy rounded-3xl max-w-md w-full p-6 border border-purple-500/25 relative overflow-hidden"
+              className="glass-panel-heavy rounded-2xl sm:rounded-3xl max-w-md w-full p-5 sm:p-6 border border-purple-500/25 relative overflow-hidden"
             >
               {/* Corner close button */}
               <button
