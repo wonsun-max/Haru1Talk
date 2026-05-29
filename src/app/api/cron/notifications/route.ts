@@ -145,9 +145,10 @@ async function dispatchResendEmail(
 export async function GET(request: NextRequest) {
   try {
     const isDebug = request.nextUrl.searchParams.get('debug') === 'true';
+    const targetUserId = request.nextUrl.searchParams.get('userId');
 
-    // 1. Verify Vercel Cron Authorization header unless in local debug mode
-    if (!isDebug) {
+    // 1. Verify Vercel Cron Authorization header unless in local debug mode or target user trigger
+    if (!isDebug && !targetUserId) {
       const authHeader = request.headers.get('Authorization');
       const vercelCronSecret = process.env.CRON_SECRET;
       
@@ -165,7 +166,7 @@ export async function GET(request: NextRequest) {
       minute: '2-digit'
     }).format(new Date()); // Returns e.g. "23:20"
 
-    logger.info(`Cron Scheduler: Checking notifications for time KST=${kstTimeStr} (DebugMode=${isDebug})`);
+    logger.info(`Cron Scheduler: Checking notifications for time KST=${kstTimeStr} (DebugMode=${isDebug}, TargetUser=${targetUserId})`);
 
     // 3. Fetch active authenticated users from Supabase admin catalog
     const { data: { users }, error: fetchUsersError } = await supabaseAdmin.auth.admin.listUsers();
@@ -174,8 +175,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Database catalog fetch failure.' }, { status: 500 });
     }
 
-    // 4. Filter users matching target scheduled alarm preferences
+    // 4. Filter users matching target scheduled alarm preferences or direct target userId
     const targetUsers = users.filter(user => {
+      // If a specific userId is targeted, trigger instantly only for that user.
+      if (targetUserId) {
+        return user.id === targetUserId;
+      }
+
       const meta = user.user_metadata;
       const isEnabled = meta?.notification_enabled === true;
       if (!isEnabled) return false;

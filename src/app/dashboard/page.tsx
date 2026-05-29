@@ -164,6 +164,13 @@ export default function DashboardPage() {
       setNotificationTime(time);
       setShowSaveFeedback(true);
 
+      // Trigger instant verification notification if user enabled notifications
+      if (enabled && session?.user?.id) {
+        fetch(`/api/cron/notifications?userId=${session.user.id}`).catch(err => {
+          logger.error('Dashboard: Failed to trigger instant test notification in background', err);
+        });
+      }
+
       // Hide success feedback icon after 2 seconds
       setTimeout(() => {
         setShowSaveFeedback(false);
