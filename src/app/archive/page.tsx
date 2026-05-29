@@ -9,6 +9,7 @@ import { logger } from '@/lib/logger';
 
 interface ArchiveDiary {
   id: string;
+  session_id: string;
   title: string;
   content: string;
   emotion: 'happy' | 'sad' | 'calm' | 'tired' | 'angry';
@@ -29,6 +30,37 @@ export default function ArchivePage() {
   const [selectedDiary, setSelectedDiary] = useState<ArchiveDiary | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'calendar' | 'gallery'>('calendar');
+
+  // Past chat replay states
+  const [activeTab, setActiveTab] = useState<'diary' | 'chat'>('diary');
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [loadingChat, setLoadingChat] = useState(false);
+
+  // Fetch chat messages for selected session
+  const fetchChatMessages = async (sessId: string) => {
+    setLoadingChat(true);
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('session_id', sessId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setChatMessages(data || []);
+    } catch (err) {
+      logger.error('Failed to load chat history inside archive', err);
+    } finally {
+      setLoadingChat(false);
+    }
+  };
+
+  const handleTabChange = (tab: 'diary' | 'chat') => {
+    setActiveTab(tab);
+    if (tab === 'chat' && chatMessages.length === 0 && selectedDiary) {
+      fetchChatMessages(selectedDiary.session_id);
+    }
+  };
 
   // Month navigation state (defaults to today)
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -85,6 +117,7 @@ export default function ArchivePage() {
       if (dbDiaries) {
         setDiaries(dbDiaries.map((d: any) => ({
           id: d.id,
+          session_id: d.session_id,
           title: d.title,
           content: d.content,
           emotion: d.emotion as 'happy' | 'sad' | 'calm' | 'tired' | 'angry',
@@ -206,6 +239,7 @@ export default function ArchivePage() {
 
       const newDiary: ArchiveDiary = {
         id: result.diary.id,
+        session_id: result.diary.session_id,
         title: result.diary.title,
         content: result.diary.content,
         emotion: result.diary.emotion as 'happy' | 'sad' | 'calm' | 'tired' | 'angry',
@@ -266,6 +300,8 @@ export default function ArchivePage() {
     setEditEmotion(diaryItem.emotion);
     setEditSentiment(diaryItem.sentiment_score);
     setIsEditing(false);
+    setActiveTab('diary');
+    setChatMessages([]);
   };
 
   // Open blank creator modal pre-assigned with targeted date cell click
@@ -584,7 +620,7 @@ export default function ArchivePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="glass-panel-heavy rounded-3xl max-w-md w-full p-6 border border-purple-500/25 relative overflow-hidden"
+              className={`glass-panel-heavy rounded-3xl w-full p-6 border border-purple-500/25 relative overflow-hidden transition-all duration-300 ${activeTab === 'chat' ? 'max-w-lg' : 'max-w-md'}`}
             >
               {/* Corner close button */}
               <button
@@ -609,23 +645,83 @@ export default function ArchivePage() {
                  -------------------- */}
               {!isEditing ? (
                 <>
-                  <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-4 select-none">
-                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${getEmotionMetadata(selectedDiary.emotion).color}`}>
-                      기분: {getEmotionMetadata(selectedDiary.emotion).emoji} {getEmotionMetadata(selectedDiary.emotion).text}
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-400">
-                      감정지수: {selectedDiary.sentiment_score.toFixed(1)}/10
-                    </span>
+                  {/* Tab Selector Switch (Google Antigravity Premium) */}
+                  <div className="flex bg-slate-950/60 border border-white/5 p-1 rounded-xl mb-4 select-none">
+                    <button
+                      onClick={() => handleTabChange('diary')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                        activeTab === 'diary' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>📓 회고 일기</span>
+                    </button>
+                    <button
+                      onClick={() => handleTabChange('chat')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                        activeTab === 'chat' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Volume2 className="w-3.5 h-3.5" />
+                      <span>💬 대화록 다시보기</span>
+                    </button>
                   </div>
 
-                  <div className="max-h-64 overflow-y-auto pr-1 select-text">
-                    <h2 className="text-sm font-extrabold text-white mb-3 leading-snug">
-                      "{selectedDiary.title}"
-                    </h2>
-                    <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line text-justify text-justify-inter-word font-semibold">
-                      {selectedDiary.content}
-                    </p>
-                  </div>
+                  {activeTab === 'diary' ? (
+                    <>
+                      <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-4 select-none">
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${getEmotionMetadata(selectedDiary.emotion).color}`}>
+                          기분: {getEmotionMetadata(selectedDiary.emotion).emoji} {getEmotionMetadata(selectedDiary.emotion).text}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          감정지수: {selectedDiary.sentiment_score.toFixed(1)}/10
+                        </span>
+                      </div>
+
+                      <div className="max-h-64 overflow-y-auto pr-1 select-text">
+                        <h2 className="text-sm font-extrabold text-white mb-3 leading-snug">
+                          "{selectedDiary.title}"
+                        </h2>
+                        <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line text-justify text-justify-inter-word font-semibold">
+                          {selectedDiary.content}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    /* Chat Replay Timeline */
+                    <div className="max-h-64 overflow-y-auto pr-1 space-y-4 select-text">
+                      {loadingChat ? (
+                        <div className="text-center py-10 text-slate-500 text-[11px] flex flex-col items-center justify-center">
+                          <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mb-3" />
+                          <span>밤의 대화록을 불러오는 중...</span>
+                        </div>
+                      ) : chatMessages.length === 0 ? (
+                        <div className="text-center py-10 text-slate-500 text-[11px]">
+                          대화 없이 기록되었거나 대화 기록이 존재하지 않습니다.
+                        </div>
+                      ) : (
+                        chatMessages.map((msg, mIdx) => {
+                          const isAi = msg.sender === 'ai';
+                          return (
+                            <div key={msg.id || mIdx} className={`flex gap-2.5 items-end ${isAi ? 'justify-start' : 'justify-end'}`}>
+                              {isAi && (
+                                <div className="w-6 h-6 rounded-full shrink-0 bg-slate-900 border border-white/5 flex items-center justify-center text-[10px]">
+                                  🌸
+                                </div>
+                              )}
+                              <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[11px] leading-relaxed font-medium ${
+                                isAi
+                                  ? 'bg-slate-950/60 border border-white/5 text-slate-200 rounded-tl-none'
+                                  : 'bg-gradient-to-br from-purple-500 to-indigo-600 text-white rounded-tr-none border border-purple-400/20'
+                              }`}>
+                                {msg.content}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
 
                   {/* Actions (Edit / Delete) */}
                   <div className="flex gap-3 mt-6 border-t border-white/5 pt-4">
