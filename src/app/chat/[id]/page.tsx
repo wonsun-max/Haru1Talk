@@ -568,7 +568,7 @@ export default function ChatPage() {
       }]);
       setIsAiTyping(false);
 
-      await triggerLiveTextToSpeech(newAiMsgId, replyText);
+      await triggerLiveTextToSpeech(newAiMsgId, replyText, nextTurnCount);
 
     } catch (err) {
       logger.error('Failed to dispatch live call chat sequence to server APIs', err);
@@ -581,7 +581,7 @@ export default function ChatPage() {
   /**
    * Voice Call specific TTS synthesis and playback loop manager.
    */
-  const triggerLiveTextToSpeech = async (msgId: string, text: string) => {
+  const triggerLiveTextToSpeech = async (msgId: string, text: string, turnCount: number) => {
     try {
       let voiceCode = 'alloy';
       if (persona === 'rational_t') voiceCode = 'onyx';
@@ -612,6 +612,20 @@ export default function ChatPage() {
         URL.revokeObjectURL(audioUrl);
         activeAudioRef.current = null;
         
+        // Auto-close call and trigger AI Retrospective compilation if 5 turns are complete
+        if (isLiveCallModeRef.current && turnCount >= 5) {
+          logger.info('Live call automatically closed after 5 turns. Directing to diary compilation.');
+          setIsLiveCallMode(false);
+          setLiveCallState('idle');
+          cleanupAudioStream();
+
+          // Smoothly navigate to the compiled diary details
+          setTimeout(() => {
+            router.push(`/diary/${sessionId}`);
+          }, 1500);
+          return;
+        }
+
         // Auto-restart loop if still in Live Call Mode
         if (isLiveCallModeRef.current) {
           logger.info('Live TTS playback completed. Automatically re-arming microphone.');
