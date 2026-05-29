@@ -187,7 +187,7 @@ async function dispatchResendWeeklyLetter(
         Authorization: `Bearer ${resendApiKey}`,
       },
       body: JSON.stringify({
-        from: 'Haru Talk <onboarding@resend.dev>',
+        from: 'Haru Talk <noreply@harutalk.shop>',
         to: emailAddress,
         subject: `[하루톡] ✉️ 이번 주 나에게 쓰는 편지 — ${subject}`,
         html: htmlContent,

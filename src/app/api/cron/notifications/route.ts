@@ -112,7 +112,7 @@ async function dispatchResendEmail(
         'Authorization': `Bearer ${resendApiKey}`,
       },
       body: JSON.stringify({
-        from: 'Haru Talk <onboarding@resend.dev>',
+        from: 'Haru Talk <noreply@harutalk.shop>',
         // WHY: Resend sandbox (onboarding@resend.dev) can only deliver to the account owner's
         // verified email. RESEND_TEST_OVERRIDE_TO lets us redirect all test sends to that
         // address. In production (custom domain), this env var is unset and emailAddress is used.
