@@ -77,20 +77,20 @@ async function dispatchKakaoWeeklyLetter(
       content: {
         title: `✉️ ${nickname}님께 이번 주 편지가 도착했어요`,
         description: `"${subject}"\n\n${preview}...`,
-        image_url: 'https://haru1talk.vercel.app/logo.png',
+        image_url: 'https://harutalk.shop/logo.png',
         image_width: 800,
         image_height: 400,
         link: {
-          web_url: 'https://haru1talk.vercel.app/dashboard',
-          mobile_web_url: 'https://haru1talk.vercel.app/dashboard',
+          web_url: 'https://harutalk.shop/dashboard',
+          mobile_web_url: 'https://harutalk.shop/dashboard',
         },
       },
       buttons: [
         {
           title: '편지 전체 읽기',
           link: {
-            web_url: 'https://haru1talk.vercel.app/dashboard',
-            mobile_web_url: 'https://haru1talk.vercel.app/dashboard',
+            web_url: 'https://harutalk.shop/dashboard',
+            mobile_web_url: 'https://harutalk.shop/dashboard',
           },
         },
       ],
@@ -169,7 +169,7 @@ async function dispatchResendWeeklyLetter(
         </div>
 
         <div style="text-align: center; margin-bottom: 28px;">
-          <a href="https://haru1talk.vercel.app/dashboard" style="background: linear-gradient(to right, #a855f7, #6366f1); color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 13px; font-weight: bold; border-radius: 10px; display: inline-block;">
+          <a href="https://harutalk.shop/dashboard" style="background: linear-gradient(to right, #a855f7, #6366f1); color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 13px; font-weight: bold; border-radius: 10px; display: inline-block;">
             대시보드에서 편지 보기 →
           </a>
         </div>

@@ -234,7 +234,7 @@ export default function DiaryPage() {
           content: {
             title: '🌸 하루 톡 (Haru Talk) | 오늘의 일기장',
             description: `"${diary.title}"\n\n감정: ${emojiMeta.emoji} ${emojiMeta.text}\n\n오늘 밤, 친구와 나눈 소중한 하루의 기록입니다.`,
-            imageUrl: 'https://haru1talk.vercel.app/logo.png', // Fallback to live deployed brand logo
+            imageUrl: 'https://harutalk.shop/logo.png', // Fallback to live deployed brand logo
             link: {
               mobileWebUrl: directUrl,
               webUrl: directUrl,

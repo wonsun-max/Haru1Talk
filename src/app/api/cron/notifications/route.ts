@@ -21,20 +21,20 @@ async function dispatchKakaoTalkPush(
       content: {
         title: '하루톡 밤의 회고 대화방 오픈 🌙',
         description: `${nickname}님, 오늘 어떤 하루를 보내셨나요? 인공지능 친구가 따뜻한 대화를 기다리고 있어요.`,
-        image_url: 'https://haru1talk.vercel.app/logo.png',
+        image_url: 'https://harutalk.shop/logo.png',
         image_width: 800,
         image_height: 400,
         link: {
-          web_url: 'https://haru1talk.vercel.app/dashboard',
-          mobile_web_url: 'https://haru1talk.vercel.app/dashboard'
+          web_url: 'https://harutalk.shop/dashboard',
+          mobile_web_url: 'https://harutalk.shop/dashboard'
         }
       },
       buttons: [
         {
           title: '대화 나누러 가기',
           link: {
-            web_url: 'https://haru1talk.vercel.app/dashboard',
-            mobile_web_url: 'https://haru1talk.vercel.app/dashboard'
+            web_url: 'https://harutalk.shop/dashboard',
+            mobile_web_url: 'https://harutalk.shop/dashboard'
           }
         }
       ]
@@ -96,7 +96,7 @@ async function dispatchResendEmail(
           지치고 복잡했던 오늘의 순간들을 따뜻한 인공지능 친구와 목소리/글로 나누어보세요.<br/>
           당신의 이야기를 깊이 들어주고, 한 편의 예쁜 일기장을 자동으로 완성해 드릴게요.
         </p>
-        <a href="https://haru1talk.vercel.app/dashboard" style="background: linear-gradient(to right, #a855f7, #6366f1); color: #ffffff; text-decoration: none; padding: 12px 30px; font-size: 12px; font-weight: bold; border-radius: 8px; display: inline-block; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.25);">
+        <a href="https://harutalk.shop/dashboard" style="background: linear-gradient(to right, #a855f7, #6366f1); color: #ffffff; text-decoration: none; padding: 12px 30px; font-size: 12px; font-weight: bold; border-radius: 8px; display: inline-block; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.25);">
           오늘 밤의 회고 시작하기
         </a>
         <div style="margin-top: 40px; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 20px; font-size: 10px; color: #475569;">

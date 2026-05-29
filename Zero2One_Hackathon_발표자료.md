@@ -78,6 +78,6 @@
 
 ## 🖥️ Slide 8: Q&A 및 엔딩
 ### **Zero에서 One으로, 매일 밤 우리들의 일상에 따뜻한 치유를 선물하다.**
-* **Haru Talk 배포 주소**: [haru1talk.vercel.app](https://haru1talk.vercel.app)
+* **Haru Talk 배포 주소**: [harutalk.shop](https://harutalk.shop)
 * **도메인 메일 수신처**: `noreply@harutalk.shop`
 * *"들어주셔서 감사합니다. 질문을 환영합니다."*
