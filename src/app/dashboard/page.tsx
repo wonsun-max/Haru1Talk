@@ -154,13 +154,21 @@ export default function DashboardPage() {
       const provider = session?.user?.app_metadata?.provider || 'email';
       const providerToken = session?.provider_token || null;
 
+      // WHY: Construct update payload dynamically.
+      // If we pass kakao_access_token: providerToken directly, it will overwrite the existing token
+      // with null because session.provider_token is only available immediately after login redirect
+      // and becomes null on subsequent sessions/refreshes.
+      const updateData: Record<string, any> = {
+        notification_enabled: enabled,
+        notification_time: time,
+        oauth_provider: provider,
+      };
+      if (providerToken) {
+        updateData.kakao_access_token = providerToken;
+      }
+
       const { error } = await supabase.auth.updateUser({
-        data: {
-          notification_enabled: enabled,
-          notification_time: time,
-          oauth_provider: provider,
-          kakao_access_token: providerToken,
-        }
+        data: updateData
       });
       if (error) throw error;
 
