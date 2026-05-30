@@ -92,24 +92,28 @@ export default function DashboardPage() {
           }
 
           // Fetch latest weekly letter for this user
+          // WHY: Use .maybeSingle() instead of .single() to gracefully return null 
+          // without throwing a 406 Not Acceptable console error if no weekly letter exists.
           const { data: letterData, error: letterError } = await supabase
             .from('weekly_letters')
             .select('*')
             .eq('user_id', session.user.id)
             .order('week_start', { ascending: false })
             .limit(1)
-            .single();
+            .maybeSingle();
 
           if (!letterError && letterData) {
             setWeeklyLetter(letterData as WeeklyLetter);
           }
 
           // Fetch streak data for this user
+          // WHY: Use .maybeSingle() instead of .single() to gracefully return null 
+          // without throwing a 406 Not Acceptable console error if no streak record exists yet.
           const { data: streakRow, error: streakError } = await supabase
             .from('user_streaks')
             .select('current_streak, longest_streak, total_diaries, badges')
             .eq('user_id', session.user.id)
-            .single();
+            .maybeSingle();
 
           if (!streakError && streakRow) {
             setStreakData({

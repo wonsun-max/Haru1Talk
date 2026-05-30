@@ -49,7 +49,9 @@ interface DiaryEntry {
  * protected by active session authentication.
  */
 export default function DiaryPage() {
-  const { sessionId } = useParams() as { sessionId: string };
+  // WHY: The dynamic route folder is [id], so useParams() returns { id: string }.
+  // We alias 'id' to 'sessionId' to preserve backend integration clarity.
+  const { id: sessionId } = useParams() as { id: string };
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
